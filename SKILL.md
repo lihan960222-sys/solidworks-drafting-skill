@@ -1,0 +1,36 @@
+---
+name: solidworks-drafting
+description: Generate single-sheet engineering drafts from saved SOLIDWORKS parts using the user's drawing template, native dimensions or existing PMI, adaptive view layout and feature tables; deliver DWG and a PDF printed from that DWG.
+---
+
+# SOLIDWORKS drafting
+
+Packaging snapshot: 2026.10.07-rc1. This skill is published independently in [solidworks-drafting-skill](https://github.com/lihan960222-sys/solidworks-drafting-skill); the repository root is the installable skill folder.
+
+Combine native geometry and annotation operations with an agent-authored drawing plan. This package contains its own PowerShell, C# and Python implementation; it does not call the two legacy skills at runtime.
+
+Preserve the selected `.drwdot`: frame, zones, title block, projection, font family and arrow settings. Improve the contents by choosing informative views, uniformly scaling related orthographic views, reserving dimension lanes, and placing tables in useful free space. Learn composition from [the reference](references/layout-reference.md); a sample drawing does not replace the user's approved template. Choose another paper only when a matching approved template is available. Never enlarge the dimension values when enlarging a view.
+
+Read [the plan contract](references/plan-contract.md) before authoring a plan and [verification](references/verification.md) before delivery. Runtime: Windows PowerShell 5.1 in STA, a running installed SOLIDWORKS, its interop DLLs, installed eDrawings, Microsoft Print to PDF, and Python with `pypdf` and `pypdfium2`. Use the bundled `scripts/run.ps1`; keep each run in a new directory with `internal/` and `deliverables/`.
+
+## Workflow
+
+1. Run `Inspect` with an explicit saved `.SLDPRT` and optional configuration, writing facts under `internal/`. An active drawing is not a source part. Reject unsaved changes; use exact SI geometry and persistent edge references from facts. Read the features, dimensions, faces and edges relevant to all required geometry. A feature list is a starting point, not proof of complete dimensional definition.
+2. Author a v2 plan. Reuse selected model dimensions and, when present, existing PMI. Missing manufacturing rules go in `unresolved`; never invent tolerances, datums, threads, material or roughness. Identify necessary shape, sizes, hole positions/depths, slots, steps, fillets and chamfers. Add explicit coverage fields with evidence and annotation IDs. If the geometry is not reliably understood or an operation is unsupported, report it rather than omit it.
+3. Use `scripts/planner.py`'s `candidate_layouts` with measured view sizes, annotation/table space, the approved template's actual usable bounds and reserved boxes. Evaluate the largest fitting common scale. Align projection views according to the template. Prefer grouped dimensions, a feature table or a mixed arrangement when annotations become crowded; there is no blanket prohibition on tables. Every table row needs a visible unique feature identifier, units, source evidence and a coordinate frame where applicable. General tables are not associative SOLIDWORKS Hole Tables.
+4. Validate with `scripts/validate_plan.py`. When edge visibility is uncertain, use `Visibility`, then choose unique measured visible references. Run `Prepare` and `Preview` for an internal layout check, or `Execute` for native save/reopen, DWG export and DWG-derived PDF. Read every stage report. Repair at most three times with a measured reason and new output paths; preserve failed runs.
+5. Render and inspect the actual delivered PDF. Compare against the internal native preview: original frame, view positions, projection, nominal dimensions, symbols, table contents and legibility. Verify view scale and dimension values separately. PDF text may be outlined; OCR or annotation counts alone cannot establish fidelity. Record a hash-bound visual review using the verification procedure. Deliver only the DWG and PDF; native drawings, reports and preview rasters stay internal.
+
+`Export` audits and exports an existing saved native drawing from its original plan. `Verify` audits it without exporting. Existing results are refused. A timed-out worker returns `UNKNOWN`: inspect the session/files before deciding a recovery, and never blindly rerun.
+
+## Session and memory
+
+Operations share a serial mutex and use hidden STA workers. Close only documents created or opened by the operation; preserve the user's preexisting documents and unsaved work. Release COM references at the end of each operation. Check memory before the next operation, and process parts sequentially. Do not accumulate generated drawings or terminate SOLIDWORKS. The DWG viewer runs in its own short-lived process and closes its loaded document before that process ends.
+
+## Implemented boundary
+
+Supported: saved native parts; standard and reverse orientations; straight full sections; associated overall and diameter dimensions; selected existing model dimensions; an existing-PMI import entry point; circle-attached labels; nominal hole/feature schedules; notes; native local dimension alignment; template-aware layout candidates; saved native annotation snapshots; DWG export and direct eDrawings PDF printing. Edge-to-edge and radial operations have code but remain experimental: the bracket wall-thickness acceptance failed, so do not assume they will work for an arbitrary feature. Use verified existing model dimensions where available, otherwise report the unsupported definition.
+
+Automatic DimXpert tolerance schemes and native detail views are not implemented and are rejected. The user has deferred these two additions until further drawing tests establish a need; record them as optional improvements, not blockers to the current scope, and do not implement them without a later request. If a particular drawing requires an unsupported operation, still report that missing definition rather than silently omit it. Existing model-dimension reuse and the existing-PMI import entry point remain available; PMI must be checked by actual annotation identity and content, since its API call alone proves nothing. Assembly BOM/balloons, offset sections, batch orchestration, STEP intake and unattended/headless operation are outside this version. Geometry coverage and visual acceptance still require agent judgment. A font substitution, clipped frame, missing definition or unverified symbol remains `REVIEW_REQUIRED` or `FAILED`; do not label a PDF verified just because it exists.
+
+The result is an engineer-review draft. `DRAFT_VERIFIED` requires source integrity, native reopen, full geometry coverage, verified outputs and hash-bound visual review. It never means manufacturing release approval.

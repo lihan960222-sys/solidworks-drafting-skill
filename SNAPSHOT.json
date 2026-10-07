@@ -1,0 +1,33 @@
+{
+  "version": "2026.10.07-rc1",
+  "scope": "Independent integrated DWG/PDF draft candidate; automatic DimXpert and detail views deferred",
+  "files": {
+    ".gitattributes": "8b9c3028d6467ff3be7c793141927841d70f47f52d0590677438f488ca154992",
+    ".gitignore": "9f0b137ce7744ba19e7c955ee59cb5d983fa9d7d05c172b653bf117b2812ac59",
+    "agents/openai.yaml": "99b2e55780563c72fad8075cb3091f5cc26db5698a3eb1ebfae47dc115f948df",
+    "configs/layout-profiles.json": "ba9ab08af8a19ab00425c0ec8b6831a8f996a128e30e524b442ddab64613945b",
+    "docs/superpowers/plans/2026-10-06-solidworks-drafting.md": "206fa9b8c609e9d3ea1f4c0efcf668cb9099357e61c75ca463d7ce4e7766b397",
+    "docs/superpowers/specs/2026-10-06-solidworks-drafting-brief.md": "6f09011886b3d30f559ca14a270b4004e6a6e657d31de8445e30fa1045cc3166",
+    "docs/superpowers/specs/2026-10-06-solidworks-drafting-design.md": "1796e631c0095e5e315d7d56f630739177b9aeffc18d53c1d3821ce90798b975",
+    "examples/request.template.json": "07b517e67679c0e40c7893ce4364f68e42b4c3706d42ce1b67c92448d6c6253e",
+    "README.md": "499fa915cf78a56e5064cf1104e12c74ad2627a24ba810dcf7aca65165a3c482",
+    "references/layout-reference.md": "07dba402ff3e6af6bcb58eeaa3a77b50212a490e23c5f50e9379c1f26dfb6e38",
+    "references/plan-contract.md": "83f18fcfd11bcc945dbb5ec1a0b60435a48fb4e58cb58122ec4f645b5baf8fbe",
+    "references/verification.md": "616cb5684c43d7ee2f653f6872b7285a2655a93a3d5522a07cc7f18b96349be5",
+    "requirements.txt": "e2f88597e1588c105147a5cacb9c285a0d114877ac8b7b1031a07936e2612113",
+    "scripts/dwg_pdf.ps1": "46f814621664a689bab533c0d54784ec1f3a7ae721d4b49268dca41de4c23262",
+    "scripts/planner.py": "90e2eaa9670aee933aaf803d44bdb32ade0b496c389c34247dd57ce0895f5f09",
+    "scripts/run.ps1": "a105130ee2b97129e1a693272cd4e500995126081c0b30a21dfcd9849eb06c7a",
+    "scripts/src/DrawingEngine.cs": "bff8eb775541c3d163e421dc34e9c113da8c6270352f8d7848dd644b3292d0c7",
+    "scripts/src/DrawingPipeline.cs": "b70e522fdf22d46efab4184dc537ef742733179c9ee9ba364633f063f8b96e71",
+    "scripts/src/InspectGeometry.cs": "4dd15af12c2cd8e12573170cd30538bc29c665a1ddf50882d8b35c36a615cc1f",
+    "scripts/validate_native.py": "2e27e22b21929b183520c2cce43c6c4aa9dc66ac5998a56e1357a1307a10fe9c",
+    "scripts/validate_plan.py": "c2ec8c28b446d4e54d1281762756d7010d63288db31bb43723bdeabd0d2596ab",
+    "scripts/verify_outputs.py": "f33b531c557eb95b658b0682003db728df0cb5ff66bf53e2454940719b349421",
+    "scripts/worker.ps1": "f34d74bcc2f6eb5613dd0a835a14994331af2769787cb0953d451f6452df8eb2",
+    "SKILL.md": "43da6684d9d2491d56d2c9c05520b0f23c695eb423ca6a5201abccdf87e08feb",
+    "tests/native-acceptance.ps1": "107a2f8849a49bc872c7f220e27cb8397c6d3bbf02d004e51498da5dc48422e1",
+    "tests/SampleParts.cs": "a952076d03aa95d833a83973fc45dd34293034dc3ab5710fc47255aecff7e488",
+    "tests/test_drafting.py": "d408eb4ac3fa614865a61e99ce624f6c68b2e176b208eff72de38e6739fc5b0b"
+  }
+}

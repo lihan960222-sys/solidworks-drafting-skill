@@ -1,0 +1,4 @@
+interface:
+  display_name: "SOLIDWORKS 工程图"
+  short_description: "保留原模板，复用尺寸/PMI，动态排版并交付 DWG 和 PDF"
+  default_prompt: "Use $solidworks-drafting to create a reviewable engineering draft from my saved SOLIDWORKS part, preserving the selected original template and delivering DWG and PDF."

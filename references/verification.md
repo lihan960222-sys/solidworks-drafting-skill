@@ -1,0 +1,45 @@
+# Verification and recovery
+
+Do not equate file creation, annotation count, a nominal feature table or a successful COM call with engineering completeness.
+
+Native: inspect hash/configuration; reject source modifications; check actual created dimension values and scoped visible edges; verify no dangling annotations; save, close, reopen and compare annotation/view/table snapshots and model references. New native files keep a private operation-to-annotation mapping; all Verify/Prepare/Execute/Export gates compare planned view names/orientations/positions/scales, bound annotation identities, dimension values/positions and table rows, and recompute view bounds/intersections. Verify refuses to close a drawing opened before its operation. The executor does not measure every text, leader, arrow or table footprint. Review those visually against reserved template areas.
+
+DWG/PDF: export one sheet with explicit settings, then restore the caller's settings. Hash the DWG. Load that exact file read-only in a separate eDrawings control, require one sheet, print one-to-one to Microsoft Print to PDF and wait for completion and stable file size. Close that viewer's document. Verify source DWG identity, PDF hash, actual page count and paper size, plus exactly two nonempty delivery files. Native SLDDRW-to-PDF Preview is internal and never substitutes for the DWG-derived PDF.
+
+The SOLIDWORKS DWG importer on the development machine changed dimension values (80 became 20) and positions despite explicit settings. That route was rejected. The direct eDrawings route retains nominal dimensions in the tested plate. This does not prove DWG annotations remain associative to the 3D model. eDrawings PDF may outline text and substitute fonts; visually inspect actual typography and Chinese/special symbols. Incomplete extraction receives `PARTIAL_OR_OUTLINED_TEXT_REQUIRES_VISUAL_REVIEW`, not fabricated extraction success. Font mismatch remains unresolved unless the actual output satisfies the selected template's acceptance criteria.
+
+The installed ActiveX host terminates during WinForms disposal. The isolated viewer worker closes its document and then exits its own process, releasing its owned host/window. It does not modify installation files or terminate the user's CAD process. Viewer nonzero exit, timeout, missing report or missing completion event fails the run. CAD and viewer sidecars have unique per-request paths; the runner checks CAD request identity and both process exit codes. A failed/unknown upstream stage cannot be promoted by a later offline visual audit.
+
+## Visual record
+
+After inspecting the rendered **actual output** and comparing it with the native baseline, save `internal/visual-review.json`:
+
+```json
+{
+  "dwg_sha256": "actual delivered DWG hash",
+  "pdf_sha256": "actual delivered PDF hash",
+  "checks": {
+    "template": true, "views": true, "dimensions": true,
+    "symbols": true, "tables": true, "legibility": true, "projection": true
+  },
+  "observations": "Specific dimensions, tables, symbols and template areas inspected"
+}
+```
+
+Mark only observed checks true. The verifier rejects stale hashes and incomplete checks. Do not use an automated script to invent a review. Structural output success before visual review is `REVIEW_REQUIRED`. Draft acceptance is never manufacturing release approval.
+
+## Observed development evidence, 2026-10-06
+
+Independent publication snapshot, 2026-10-07: the complete skill now occupies the root of `solidworks-drafting-skill`. Twenty offline tests and backend compilation pass from that location. Execution-source hashes match the previously tested implementation; this packaging update is not a new native CAD acceptance run. Automatic DimXpert schemes and detail views remain deferred.
+
+Release-candidate checks: 20 new offline tests and seven legacy tests pass; the new C# backend compiles against the installed SOLIDWORKS interop. The final plate run passes native plan identity/value/position checks, source integrity, saved reopen, worker exit codes, DWG/PDF provenance and document cleanup. A separate installed-entry audit is required after copying the package. A native ownership test confirms Verify rejects a preexisting open drawing and leaves it open. Whole-branch review findings were addressed in one repair pass: shared semantic gates, strict coverage IDs and experimental payloads, upstream failure preservation, template-font inheritance, document ownership and unique worker reports.
+
+The approved local GB A3 template was retained after user rejected a replacement A4 frame. Plate orthographic views use 2:1; the isometric uses 1:1; the six-hole schedule sits at upper right. Native snapshot/reopen and exact nominal 80/50/20 dimensions pass; the end-to-end export returns REVIEW_REQUIRED. The original A3 template preview and actual DWG-derived PDF were visually checked for layout. DWG-derived preview retains the frame and dimension values; typography, the top-left template stamp and unfinished title metadata require review.
+
+A simple cylinder reuses its native 70 mm length and creates a measured Ø30 annotation, both visible in actual DWG-derived PDF. Its initial vertex-based overall dimension failed because a cylinder has no usable corner vertices. The corrected plan imports the native length; partial PDF text extraction is correctly left for visual review. This is a simple-cylinder test, not stepped/blind-hole shaft acceptance.
+
+The L-section bracket's exterior dimensions pass, but associated wall-thickness edge matching failed. The initial failure and three deliberate repairs are retained; no completed bracket drawing is claimed. The general edge-to-edge backend therefore remains experimental. A2 printer support, the full advanced fixture set and independent blind reconstruction acceptance are not certified in this release candidate.
+
+User scope update: new automatic DimXpert schemes and native detail views are deferred optional improvements, to be reconsidered after further user tests. Their implementation is not a current acceptance condition. This does not permit omitting a geometric definition when an individual drawing needs an unsupported operation; report that case explicitly. Existing native dimension reuse and existing-PMI import remain in scope.
+
+Preserve all failed reports. After a timeout, inspect first. Retry only in new directories with a concrete cause; at most three repairs for a sample. Close this operation's generated/opened documents promptly, preserve preexisting unsaved documents, release COM references and check available memory before continuing.
