@@ -43,7 +43,8 @@ try {
  }elseif(Test-Path -LiteralPath $workerOutput){
   $worker.WaitForExit();$worker.Refresh();$result=Get-Content -LiteralPath $workerOutput -Raw -Encoding UTF8 | ConvertFrom-Json
   $result | Add-Member -NotePropertyName native_worker_exit_code -NotePropertyValue $worker.ExitCode -Force
-  if($result.request_id -ne $requestId -or $worker.ExitCode -ne 0){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('CAD worker identity/exit failure: '+$result.error) -Force}
+  if($result.request_id -ne $requestId){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('CAD worker request identity failure: '+$result.error) -Force}
+  elseif($worker.ExitCode -ne 0 -and -not($result.status -eq 'FAILED' -and $worker.ExitCode -eq 1)){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('Unexpected CAD worker exit '+$worker.ExitCode+': '+$result.error) -Force}
  }
  else{$result=@{status='FAILED';error=(Get-Content -LiteralPath ($log+'.err') -Raw);worker_log=$log}}
  if($Mode -in @('Execute','Export') -and $result.status -ne 'FAILED' -and $result.status -ne 'UNKNOWN'){

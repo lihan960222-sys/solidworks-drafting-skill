@@ -83,8 +83,15 @@ public static partial class DrawingEngine {
  static double[] Project(IView v,double[] xyz){var mu=(IMathUtility)sw.GetMathUtility();return (double[])((IMathPoint)((IMathPoint)mu.CreatePoint(xyz)).MultiplyTransform(v.ModelToViewTransform)).ArrayData;}
  static void TemplateFont(IAnnotation a){Require(a.SetTextFormat(0,true,a.GetTextFormat(0)),"Template annotation text format failed");}
  static void Bind(string id,IAnnotation a,string view){if(bindings==null)return;bindings[id]=D("annotation_name",a.GetName(),"view",view,"position",a.GetPosition());}
+ static bool MatchesBinding(IAnnotation annotation,Dictionary<string,object> binding){
+  if(annotation.GetName()!=S(binding,"annotation_name"))return false;
+  if(!binding.ContainsKey("dimension_name"))return true;
+  var dd=annotation.GetSpecificAnnotation() as IDisplayDimension;
+  return dd!=null&&String.Join("@",((IDimension)dd.GetDimension2(0)).FullName.Split('@').Take(2))==S(binding,"dimension_name");
+ }
  static void SaveBindings(Dictionary<string,object> report){
-  foreach(var value in bindings.Values){var binding=Map(value);int count=0;for(var v=(IView)dr.GetFirstView();v!=null;v=(IView)v.GetNextView()){if(S(binding,"view")!=""?v.Name!=S(binding,"view"):!String.IsNullOrEmpty(v.GetReferencedModelName()))continue;foreach(var obj in A(v.GetAnnotations())){var a=(IAnnotation)obj;if(a.GetName()==S(binding,"annotation_name")){binding["position"]=a.GetPosition();count++;}}}Require(count==1,"Native annotation identity is not unique");}
+  report["native_bindings"]=bindings;report["native_baseline"]=NativeInventory(drawing);
+  foreach(var entry in bindings){var binding=Map(entry.Value);int count=0;for(var v=(IView)dr.GetFirstView();v!=null;v=(IView)v.GetNextView()){if(S(binding,"view")!=""?v.Name!=S(binding,"view"):!String.IsNullOrEmpty(v.GetReferencedModelName()))continue;foreach(var obj in A(v.GetAnnotations())){var a=(IAnnotation)obj;if(MatchesBinding(a,binding)){binding["position"]=a.GetPosition();count++;}}}Require(count==1,"Native annotation identity is not unique: "+entry.Key+" view="+S(binding,"view")+" annotation="+S(binding,"annotation_name")+" matches="+count);}
   var property=drawing.Extension.get_CustomPropertyManager("");Require(property.Add3("_DraftingBindings",30,Serializer().Serialize(bindings),2)==0,"Save native annotation identities failed");report["native_bindings"]=bindings;
  }
  static object ReadBindings(){string raw="",resolved="";bool wasResolved=false,linked=false;drawing.Extension.get_CustomPropertyManager("").Get6("_DraftingBindings",false,out raw,out resolved,out wasResolved,out linked);Require(!String.IsNullOrEmpty(raw),"Saved semantic annotation mapping missing");return Serializer().DeserializeObject(raw);}
@@ -159,7 +166,7 @@ public static partial class DrawingEngine {
     }
     results.Add(D("view",kv.Key,"visible_circle_count",circles.Count,"source_circle_matches",matches,"visible_lines",lines));
    }
-   report["views"]=results;report["source_hash_unchanged"]=Hash(source)==before;Require(Convert.ToBoolean(report["source_hash_unchanged"]),"Source changed during visibility preview");report["status"]="VISIBILITY_MEASURED";
+   report["views"]=results;report["model_dimension_inventory"]=ModelDimensionInventory(p,null);report["source_hash_unchanged"]=Hash(source)==before;Require(Convert.ToBoolean(report["source_hash_unchanged"]),"Source changed during visibility preview");report["status"]="VISIBILITY_MEASURED";
   }catch(Exception ex){report["error"]=ex.Message;}
   finally{if(!String.IsNullOrEmpty(created)&&sw!=null)try{sw.CloseDoc(created);}catch(Exception ex){report["cleanup_error"]=ex.Message;}try{if(sw!=null&&!string.IsNullOrEmpty(source))Restore(sw.GetOpenDocumentByName(source) as IModelDoc2,wasOpen,oldCfg);}catch(Exception ex){report["restore_error"]=ex.Message;report["status"]="FAILED";}ReleaseSessionReferences();}
   return report;
@@ -173,7 +180,7 @@ public static partial class DrawingEngine {
    Require(sheet.SetScale(N(Map(Rows(p["views"])[0]),"scale"),1,false,false),"Sheet scale update failed");foreach(var o in Rows(p["sections"])){var s=Map(o);views.Add(S(s,"id"),Section(s));}
    var checks=new List<object>();foreach(var o in Rows(p["dimensions"]))checks.Add(Dimension(Map(o)));report["dimensions"]=checks;
    var edges=Edges(f);foreach(var o in OptionalRows(p,"diameters"))checks.Add(Diameter(Map(o),edges,model));foreach(var o in Rows(p["labels"]))Label(Map(o),edges,model);
-   FeatureDimensions(p,edges,model);ImportAnnotations(p);foreach(var o in Rows(p["tables"]))Table(Map(o));dr.ActivateView("");foreach(var o in Rows(p["notes"])){var n=Map(o);var note=Note(S(n,"text"),Vec(n["position_mm"]));Bind(S(n,"id"),(IAnnotation)note.GetAnnotation(),"");}drawing.ClearSelection2(true);Require(drawing.ForceRebuild3(false),"Drawing rebuild failed");
+   FeatureDimensions(p,edges,model);ImportAnnotations(p,report);foreach(var o in Rows(p["tables"]))Table(Map(o));dr.ActivateView("");foreach(var o in Rows(p["notes"])){var n=Map(o);var note=Note(S(n,"text"),Vec(n["position_mm"]));Bind(S(n,"id"),(IAnnotation)note.GetAnnotation(),"");}drawing.ClearSelection2(true);Require(drawing.ForceRebuild3(false),"Drawing rebuild failed");
    Arrange(p);Require(drawing.ForceRebuild3(false),"Post-arrangement rebuild failed");
    var boxes=new List<object>();var flags=new List<object>();var extents=new Dictionary<string,double[]>();
    foreach(var kv in views){var box=(double[])kv.Value.GetOutline();var mm=new double[4];for(int i=0;i<4;i++)mm[i]=box[i]*1000;extents.Add(kv.Key,mm);boxes.Add(D("view",kv.Key,"outline_mm",mm));if(mm[0]<0||mm[1]<0||mm[2]>N(sh,"width_mm")||mm[3]>N(sh,"height_mm"))flags.Add("Out-of-sheet view: "+kv.Key);}

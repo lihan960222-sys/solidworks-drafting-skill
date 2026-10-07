@@ -2,5 +2,5 @@
   "source": "C:\\CAD\\part.SLDPRT",
   "configuration": "Default",
   "template": "C:\\CAD\\approved-a3.drwdot",
-  "request": "Preserve this template, choose readable view scales and positions, reuse native dimensions and existing PMI, allow feature tables where useful, and deliver only DWG and PDF."
+  "request": "Preserve this template, choose readable views, reuse measured native dimensions or existing PMI, and use verified feature tables where useful. The delivered 2D drawing alone must uniquely define the entire nominal geometry, with complete independent dimension chains and no duplicate driving definitions. Record a source-bound geometric reconstruction/nonredundancy audit and fail if a necessary size, location, direction, depth or relationship remains unresolved. Tolerances and surface finish may be deferred. Deliver only DWG and PDF."
 }

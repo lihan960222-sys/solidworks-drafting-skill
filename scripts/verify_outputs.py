@@ -23,6 +23,8 @@ def check_visual_review(review,dwg,pdf):
     return True
 
 def check_native_plan(snapshot,plan,facts,bindings=None):
+    def matches_binding(annotation,binding):
+        return annotation.get('annotation_name')==binding['annotation_name'] and ('dimension_name' not in binding or annotation.get('name')==binding['dimension_name'])
     views=[v for v in snapshot if v.get('source')]
     planned=plan.get('views',[])+plan.get('sections',[])
     if len(views)!=len(planned):raise ValueError('Native view count differs from plan')
@@ -53,20 +55,21 @@ def check_native_plan(snapshot,plan,facts,bindings=None):
         if 'id' not in item:continue  # helper-only probes; full plan validation requires IDs
         binding=(bindings or {}).get(item['id'])
         if not binding or binding['view']!=item['view']:raise ValueError('Missing native dimension identity')
-        candidates=[a for a in by_view[item['view']]['annotations'] if a.get('annotation_name')==binding['annotation_name']]
+        candidates=[a for a in by_view[item['view']]['annotations'] if matches_binding(a,binding)]
         value=item['expected_deg']*3.141592653589793/180 if item.get('direction')=='angular' else item['expected_mm']/1000
         if len(candidates)!=1 or abs(candidates[0].get('value_si',float('inf'))-value)>1e-7:raise ValueError('Native dimension identity/view/value mismatch')
         position=binding['position'][:2] if plan.get('auto_arrange') else [x/1000 for x in item['position_mm']]
         if max(abs(a-b)*1000 for a,b in zip(candidates[0]['position'][:2],position))>.5:raise ValueError('Native dimension position mismatch')
+    from validate_plan import dimension_key
     for name in plan.get('model_dimensions',{}).get('keep',[]):
         binding=(bindings or {}).get('model:'+name)
         source_dims=[d for f in facts['features'] for d in f['dimensions'] if d['name']==name or d['name'].startswith(name+'@')]
-        actual=[a for v in views if binding and v['view']==binding['view'] for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name'] and a.get('name')==name]
+        actual=[a for v in views if binding and v['view']==binding['view'] for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name'] and a.get('name')==dimension_key(name)]
         if not source_dims or len(actual)!=1 or abs(actual[0]['value_si']-source_dims[0]['value_si'])>1e-7:raise ValueError('Selected model dimension missing/changed')
     for ident in plan.get('dimension_ids',[]):
         binding=(bindings or {}).get(ident)
         if not binding:raise ValueError('Missing native annotation identity: '+ident)
-        candidates=[a for v in snapshot if (v['view']==binding['view'] if binding['view'] else not v.get('source')) for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name']]
+        candidates=[a for v in snapshot if (v['view']==binding['view'] if binding['view'] else not v.get('source')) for a in v['annotations'] if matches_binding(a,binding)]
         if len(candidates)!=1 or max(abs(a-b)*1000 for a,b in zip(candidates[0]['position'][:2],binding['position'][:2]))>.5:raise ValueError('Native annotation identity/position changed')
         x,y=candidates[0]['position'][:2]
         if x<0 or y<0 or x*1000>sheet['width_mm'] or y*1000>sheet['height_mm']:raise ValueError('Native annotation outside sheet')
@@ -111,7 +114,7 @@ def check_pdf(path, sheet_mm, expected_texts):
 
 def verify_native(plan,report):
     import json
-    from validate_plan import validate,check_coverage
+    from validate_plan import validate,check_coverage,check_geometry_audit
     check_upstream(report)
     validate(plan,allow_existing=True)
     facts=json.loads(Path(plan['facts']).read_text(encoding='utf-8-sig'))
@@ -119,7 +122,8 @@ def verify_native(plan,report):
     if sha256(facts['path'])!=facts['sha256'] or report.get('reopen',{}).get('status')!='PASS' or check['layout_flags']:raise ValueError('Native/source/layout gate failed')
     coverage=check_coverage(plan,facts)
     if not coverage['complete']:raise ValueError('Incomplete geometry definitions')
-    report.update(native_plan_check=check,layout_flags=check['layout_flags'],coverage_check=coverage)
+    audit=check_geometry_audit(plan,facts)
+    report.update(native_plan_check=check,layout_flags=check['layout_flags'],coverage_check=coverage,geometry_audit_check=audit)
     return report
 
 def verify_outputs(plan,report):
