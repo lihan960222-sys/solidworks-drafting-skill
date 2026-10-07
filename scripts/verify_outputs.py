@@ -22,7 +22,14 @@ def check_visual_review(review,dwg,pdf):
     if any(review.get('checks',{}).get(k) is not True for k in ('template','views','dimensions','symbols','tables','legibility','projection')):raise ValueError('Incomplete visual review')
     return True
 
-def check_native_plan(snapshot,plan,facts,bindings=None):
+def check_native_plan(snapshot,plan,facts,bindings=None,envelope_layout=None):
+    if plan.get('layout'):
+        if not envelope_layout:raise ValueError('Missing saved measured envelope layout')
+        from planner import pack_envelopes
+        solved=pack_envelopes(**envelope_layout['measurement'])
+        if solved['positions_mm']!=envelope_layout.get('positions_mm') or solved['table_bounds_mm']!=envelope_layout.get('table_bounds_mm'):raise ValueError('Saved layout differs from measured envelope solution')
+    def matches_binding(annotation,binding):
+        return annotation.get('annotation_name')==binding['annotation_name'] and ('dimension_name' not in binding or annotation.get('name')==binding['dimension_name'])
     views=[v for v in snapshot if v.get('source')]
     planned=plan.get('views',[])+plan.get('sections',[])
     if len(views)!=len(planned):raise ValueError('Native view count differs from plan')
@@ -31,9 +38,11 @@ def check_native_plan(snapshot,plan,facts,bindings=None):
     for expected in planned:
         actual=by_view.get(expected['id'])
         if not actual or Path(actual['source'])!=Path(facts['path']) or actual['configuration']!=facts['configuration']:raise ValueError('Native view/source/configuration mismatch')
-        if abs(actual['scale']-expected['scale'])>1e-8:raise ValueError('Native view scale mismatch')
+        expected_scale=expected['scale']*envelope_layout.get('scale_factor',1) if plan.get('layout') else expected['scale']
+        if abs(actual['scale']-expected_scale)>1e-8:raise ValueError('Native view scale mismatch')
         if 'model_view' in expected and actual.get('orientation')!=expected['model_view']:raise ValueError('Native view orientation mismatch')
-        if len(actual.get('position',[]))<2 or max(abs(a*1000-b) for a,b in zip(actual['position'][:2],expected['position_mm']))>.5:raise ValueError('Native view position mismatch')
+        expected_position=envelope_layout['positions_mm'][expected['id']] if plan.get('layout') else expected['position_mm']
+        if len(actual.get('position',[]))<2 or max(abs(a*1000-b) for a,b in zip(actual['position'][:2],expected_position))>.5:raise ValueError('Native view position mismatch')
         box=[x*1000 for x in actual['outline']]
         if box[0]<0 or box[1]<0 or box[2]>sheet['width_mm'] or box[3]>sheet['height_mm']:layout.append('Out-of-sheet view: '+expected['id'])
     from planner import overlaps
@@ -53,29 +62,63 @@ def check_native_plan(snapshot,plan,facts,bindings=None):
         if 'id' not in item:continue  # helper-only probes; full plan validation requires IDs
         binding=(bindings or {}).get(item['id'])
         if not binding or binding['view']!=item['view']:raise ValueError('Missing native dimension identity')
-        candidates=[a for a in by_view[item['view']]['annotations'] if a.get('annotation_name')==binding['annotation_name']]
+        candidates=[a for a in by_view[item['view']]['annotations'] if matches_binding(a,binding)]
         value=item['expected_deg']*3.141592653589793/180 if item.get('direction')=='angular' else item['expected_mm']/1000
         if len(candidates)!=1 or abs(candidates[0].get('value_si',float('inf'))-value)>1e-7:raise ValueError('Native dimension identity/view/value mismatch')
-        position=binding['position'][:2] if plan.get('auto_arrange') else [x/1000 for x in item['position_mm']]
+        position=binding['position'][:2] if plan.get('auto_arrange') or plan.get('layout') else [x/1000 for x in item['position_mm']]
         if max(abs(a-b)*1000 for a,b in zip(candidates[0]['position'][:2],position))>.5:raise ValueError('Native dimension position mismatch')
+    from validate_plan import dimension_key
     for name in plan.get('model_dimensions',{}).get('keep',[]):
         binding=(bindings or {}).get('model:'+name)
         source_dims=[d for f in facts['features'] for d in f['dimensions'] if d['name']==name or d['name'].startswith(name+'@')]
-        actual=[a for v in views if binding and v['view']==binding['view'] for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name'] and a.get('name')==name]
+        actual=[a for v in views if binding and v['view']==binding['view'] for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name'] and a.get('name')==dimension_key(name)]
         if not source_dims or len(actual)!=1 or abs(actual[0]['value_si']-source_dims[0]['value_si'])>1e-7:raise ValueError('Selected model dimension missing/changed')
     for ident in plan.get('dimension_ids',[]):
         binding=(bindings or {}).get(ident)
         if not binding:raise ValueError('Missing native annotation identity: '+ident)
-        candidates=[a for v in snapshot if (v['view']==binding['view'] if binding['view'] else not v.get('source')) for a in v['annotations'] if a.get('annotation_name')==binding['annotation_name']]
+        candidates=[a for v in snapshot if (v['view']==binding['view'] if binding['view'] else not v.get('source')) for a in v['annotations'] if matches_binding(a,binding)]
         if len(candidates)!=1 or max(abs(a-b)*1000 for a,b in zip(candidates[0]['position'][:2],binding['position'][:2]))>.5:raise ValueError('Native annotation identity/position changed')
         x,y=candidates[0]['position'][:2]
         if x<0 or y<0 or x*1000>sheet['width_mm'] or y*1000>sheet['height_mm']:raise ValueError('Native annotation outside sheet')
-    texts=[a.get('text','') for a in items]
+    normalized=lambda text:text.replace('\r\n','\n').replace('\r','\n')
+    def resolve_scale(text):
+        for key,v in by_view.items():text=text.replace('{scale:'+key+'}',format(v['scale'],'g'))
+        return normalized(text)
+    texts=[normalized(a.get('text','')) for a in items]
     for text in [x['text'] for key in ('notes','labels') for x in plan.get(key,[])]:
-        if text not in texts:raise ValueError('Native note/label missing')
+        if resolve_scale(text) not in texts:raise ValueError('Native note/label missing')
     tables=[a['rows'] for a in items if 'rows' in a]
     for table in plan.get('tables',[]):
         if table['rows'] not in tables:raise ValueError('Native table changed')
+    if plan.get('layout'):
+        options=plan['layout'];pad=options['padding_mm'];boxes=[]
+        for v in views:
+            if 'envelope_mm' not in v:raise ValueError('Native annotation envelope missing')
+            b=v['envelope_mm'];box=[b[0]-pad,b[1]-pad,b[2]+pad,b[3]+pad]
+            expected=envelope_layout['actual_bounds_mm'][v['view']]
+            if max(abs(a-b) for a,b in zip(box,expected))>.1:raise ValueError('Native annotation envelope changed')
+            boxes.append(box)
+        measured_tables=[]
+        for table in plan.get('tables',[]):
+            candidate=next((a for a in items if a.get('rows')==table['rows']),None)
+            if not candidate or not candidate.get('bounds_mm'):raise ValueError('Native table envelope missing')
+            measured_tables.append(candidate['bounds_mm'])
+        if len(measured_tables)!=len(envelope_layout['actual_table_bounds_mm']):raise ValueError('Native layout table count changed')
+        for a,b in zip(measured_tables,envelope_layout['actual_table_bounds_mm']):
+            if max(abs(x-y) for x,y in zip(a,b))>.1:raise ValueError('Native table envelope changed')
+        boxes+=measured_tables;u=options['usable_bounds_mm']
+        for b in boxes:
+            if b[0]<u[0]-.1 or b[1]<u[1]-.1 or b[2]>u[2]+.1 or b[3]>u[3]+.1:layout.append('Annotation envelope outside usable frame')
+            if any(overlaps(b,r) for r in envelope_layout['measurement']['reserved_boxes_mm']):layout.append('Annotation envelope overlaps reserved area')
+        for i,a in enumerate(boxes):
+            for b in boxes[i+1:]:
+                if overlaps(a,b):layout.append('Annotation block/table overlap')
+                clearance=max(a[0]-b[2],b[0]-a[2],a[1]-b[3],b[1]-a[3])
+                if clearance<options['gap_mm']-.1:layout.append('Annotation block/table clearance below standard')
+    if plan.get('line_hierarchy') is True:
+        for v in views:
+            if v.get('line_hierarchy')!={'visible_edges':2,'dimension_lines':0,'extension_lines':0}:raise ValueError('Native line hierarchy changed')
+            if any(a.get('line_width')!=0 or a.get('color')!=0 for a in v['annotations'] if 'value_si' in a):raise ValueError('Native dimension line style changed')
     return {'status':'PASS','planned_dimensions_checked':len(definitions),'views_checked':len(views),'layout_flags':layout}
 
 
@@ -111,15 +154,18 @@ def check_pdf(path, sheet_mm, expected_texts):
 
 def verify_native(plan,report):
     import json
-    from validate_plan import validate,check_coverage
+    from validate_plan import validate,check_coverage,check_geometry_audit
     check_upstream(report)
     validate(plan,allow_existing=True)
     facts=json.loads(Path(plan['facts']).read_text(encoding='utf-8-sig'))
-    check=check_native_plan(report.get('native_baseline',[]),plan,facts,report.get('native_bindings'))
+    saved_layout=report.get('envelope_layout')
+    if plan.get('layout') and (not saved_layout or saved_layout.get('plan_sha256')!=sha256(report['plan'])):raise ValueError('Measured layout plan hash changed')
+    check=check_native_plan(report.get('native_baseline',[]),plan,facts,report.get('native_bindings'),saved_layout)
     if sha256(facts['path'])!=facts['sha256'] or report.get('reopen',{}).get('status')!='PASS' or check['layout_flags']:raise ValueError('Native/source/layout gate failed')
     coverage=check_coverage(plan,facts)
     if not coverage['complete']:raise ValueError('Incomplete geometry definitions')
-    report.update(native_plan_check=check,layout_flags=check['layout_flags'],coverage_check=coverage)
+    audit=check_geometry_audit(plan,facts)
+    report.update(native_plan_check=check,layout_flags=check['layout_flags'],coverage_check=coverage,geometry_audit_check=audit)
     return report
 
 def verify_outputs(plan,report):
@@ -139,6 +185,8 @@ def verify_outputs(plan,report):
     fidelity={'status':'VISUAL_COMPARISON_REQUIRED','method':'EDRAWINGS_DWG_DIRECT','associative_dimensions':'NOT_VERIFIED'}
     delivery_files(Path(plan['output_pdf']).parent)
     texts=[item['text'] for item in plan['notes']+plan['labels']]
+    for v in report.get('native_baseline',[]):
+        if v.get('source'):texts=[t.replace('{scale:'+v['view']+'}',format(v['scale'],'g')) for t in texts]
     texts.extend(cell for table in plan['tables'] for row in table['rows'] for cell in row if cell.strip())
     texts.extend(str(x['expected_mm']).rstrip('0').rstrip('.') if isinstance(x['expected_mm'],float) else str(x['expected_mm']) for key in ('dimensions','diameters') for x in plan.get(key,[]))
     pdf=check_pdf(plan['output_pdf'],[plan['sheet']['width_mm'],plan['sheet']['height_mm']],texts)

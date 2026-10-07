@@ -3,7 +3,7 @@ param(
  [string]$Source='', [string]$Configuration='', [string]$Plan='',
  [Parameter(Mandatory=$true)][string]$Output,
  [string]$InteropPath='', [string]$Python='python',
- [ValidateRange(1,3600)][int]$TimeoutSeconds=180
+ [ValidateRange(1,3600)][int]$TimeoutSeconds=600
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -34,7 +34,7 @@ try {
  $parent=Split-Path -Parent $Output;[IO.Directory]::CreateDirectory($parent)|Out-Null
  $requestId=[guid]::NewGuid().ToString('N');$request=Join-Path $parent ('request-'+$requestId+'.json')
  $workerOutput=$Output+'.'+$requestId+'.worker.json';$log=$Output+'.'+$requestId+'.worker.log'
- @{mode=$Mode;source=$Source;configuration=$Configuration;plan=$Plan;request_id=$requestId} | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding UTF8
+ @{mode=$Mode;source=$Source;configuration=$Configuration;plan=$Plan;request_id=$requestId;python=$Python} | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding UTF8
  $args=@('-NoProfile','-ExecutionPolicy','Bypass','-Sta','-File',('"'+(Join-Path $PSScriptRoot 'worker.ps1')+'"'),'-Request',('"'+$request+'"'),'-Response',('"'+$workerOutput+'"'),'-InteropPath',('"'+$InteropPath+'"'))
  $worker=Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError ($log+'.err')
  $workerHandle=$worker.Handle
@@ -43,7 +43,8 @@ try {
  }elseif(Test-Path -LiteralPath $workerOutput){
   $worker.WaitForExit();$worker.Refresh();$result=Get-Content -LiteralPath $workerOutput -Raw -Encoding UTF8 | ConvertFrom-Json
   $result | Add-Member -NotePropertyName native_worker_exit_code -NotePropertyValue $worker.ExitCode -Force
-  if($result.request_id -ne $requestId -or $worker.ExitCode -ne 0){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('CAD worker identity/exit failure: '+$result.error) -Force}
+  if($result.request_id -ne $requestId){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('CAD worker request identity failure: '+$result.error) -Force}
+  elseif($worker.ExitCode -ne 0 -and -not($result.status -eq 'FAILED' -and $worker.ExitCode -eq 1)){$result.status='FAILED';$result | Add-Member -NotePropertyName error -NotePropertyValue ('Unexpected CAD worker exit '+$worker.ExitCode+': '+$result.error) -Force}
  }
  else{$result=@{status='FAILED';error=(Get-Content -LiteralPath ($log+'.err') -Raw);worker_log=$log}}
  if($Mode -in @('Execute','Export') -and $result.status -ne 'FAILED' -and $result.status -ne 'UNKNOWN'){

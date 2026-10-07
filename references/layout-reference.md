@@ -10,8 +10,10 @@ The planner compares tables beside the views and below them. The user subsequent
 
 Quality decisions:
 
-- Preserve the approved template and use the largest fitting common view scale within its usable area; select another paper only with a matching approved template.
+- Preserve the approved template and compare common scales with fixed paper text heights and measured view-plus-annotation envelopes; prefer balanced occupation rather than the largest barely-fitting scale; select another paper only with a matching approved template.
 - Balance the occupied envelope across the usable frame; avoid a small cluster surrounded by unused paper.
 - Keep projection alignment and consistent orthographic scale. Change centres, gaps and dimension lanes together.
 - Use tables or combined callouts where they reduce clutter, retaining feature IDs, units, origin, axes and source evidence.
 - Do not turn the example's 45° diameter direction into a universal rule.
+
+Current runtime workflow and quantified composition defaults: [envelope-layout.md](envelope-layout.md). The old side/bottom candidate estimates remain useful for initial scale preflight; final packing uses measured block rectangles and an upper-right table stack.

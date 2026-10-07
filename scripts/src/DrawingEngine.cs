@@ -11,7 +11,7 @@ using SolidWorks.Interop.sldworks;
 public static partial class DrawingEngine {
  static ISldWorks sw; static IModelDoc2 drawing; static IDrawingDoc dr;
  static Dictionary<string,IView> views; static Dictionary<string,object> bindings;
- public static void ReleaseSessionReferences(){views=null;bindings=null;dr=null;drawing=null;sw=null;}
+ public static void ReleaseSessionReferences(){views=null;bindings=null;dr=null;drawing=null;sw=null;measureEnvelopes=false;}
  static Dictionary<string,object> D(params object[] a){var r=new Dictionary<string,object>();for(int i=0;i<a.Length;i+=2)r[(string)a[i]]=a[i+1];return r;}
  static object[] A(object o){return o as object[]??new object[0];}
  static Dictionary<string,object> Map(object o){return (Dictionary<string,object>)o;}
@@ -83,8 +83,16 @@ public static partial class DrawingEngine {
  static double[] Project(IView v,double[] xyz){var mu=(IMathUtility)sw.GetMathUtility();return (double[])((IMathPoint)((IMathPoint)mu.CreatePoint(xyz)).MultiplyTransform(v.ModelToViewTransform)).ArrayData;}
  static void TemplateFont(IAnnotation a){Require(a.SetTextFormat(0,true,a.GetTextFormat(0)),"Template annotation text format failed");}
  static void Bind(string id,IAnnotation a,string view){if(bindings==null)return;bindings[id]=D("annotation_name",a.GetName(),"view",view,"position",a.GetPosition());}
+ static bool MatchesBinding(IAnnotation annotation,Dictionary<string,object> binding){
+  if(annotation.GetName()!=S(binding,"annotation_name"))return false;
+  if(!binding.ContainsKey("dimension_name"))return true;
+  var dd=annotation.GetSpecificAnnotation() as IDisplayDimension;
+  return dd!=null&&String.Join("@",((IDimension)dd.GetDimension2(0)).FullName.Split('@').Take(2))==S(binding,"dimension_name");
+ }
  static void SaveBindings(Dictionary<string,object> report){
-  foreach(var value in bindings.Values){var binding=Map(value);int count=0;for(var v=(IView)dr.GetFirstView();v!=null;v=(IView)v.GetNextView()){if(S(binding,"view")!=""?v.Name!=S(binding,"view"):!String.IsNullOrEmpty(v.GetReferencedModelName()))continue;foreach(var obj in A(v.GetAnnotations())){var a=(IAnnotation)obj;if(a.GetName()==S(binding,"annotation_name")){binding["position"]=a.GetPosition();count++;}}}Require(count==1,"Native annotation identity is not unique");}
+  report["native_bindings"]=bindings;
+  var index=new Dictionary<string,List<IAnnotation>>();for(var v=(IView)dr.GetFirstView();v!=null;v=(IView)v.GetNextView()){string scope=String.IsNullOrEmpty(v.GetReferencedModelName())?"":v.Name;foreach(var kv in AnnotationIndex(v)){string key=scope+"\u001e"+kv.Key;if(!index.ContainsKey(key))index[key]=new List<IAnnotation>();index[key].AddRange(kv.Value);}}
+  foreach(var entry in bindings){var binding=Map(entry.Value);string key=S(binding,"view")+"\u001e"+BindingKey(binding);var matches=index.ContainsKey(key)?index[key]:new List<IAnnotation>();Require(matches.Count==1,"Native annotation identity is not unique: "+entry.Key+" view="+S(binding,"view")+" annotation="+S(binding,"annotation_name")+" matches="+matches.Count);binding["position"]=matches[0].GetPosition();}
   var property=drawing.Extension.get_CustomPropertyManager("");Require(property.Add3("_DraftingBindings",30,Serializer().Serialize(bindings),2)==0,"Save native annotation identities failed");report["native_bindings"]=bindings;
  }
  static object ReadBindings(){string raw="",resolved="";bool wasResolved=false,linked=false;drawing.Extension.get_CustomPropertyManager("").Get6("_DraftingBindings",false,out raw,out resolved,out wasResolved,out linked);Require(!String.IsNullOrEmpty(raw),"Saved semantic annotation mapping missing");return Serializer().DeserializeObject(raw);}
@@ -131,8 +139,8 @@ public static partial class DrawingEngine {
   var report=D("status","FAILED","plan",planPath,"visual_review","NOT_CHECKED","manufacturing_release","NOT_APPROVED");
   bool ownsDrawing=false;
   try{
-   var p=Read(planPath);var f=Read(S(p,"facts"));string path=S(p,"output_drawing");Require(Path.IsPathRooted(path)&&File.Exists(path),"Saved native drawing required");Require(SharedReadHash(S(f,"path"))==S(f,"sha256"),"Source changed since inspection");string nativeBefore=SharedReadHash(path);
-   sw=(ISldWorks)Marshal.GetActiveObject("SldWorks.Application");drawing=sw.GetOpenDocumentByName(path) as IModelDoc2;ownsDrawing=drawing==null;Require(ownsDrawing,"Preexisting drawing preserved: close it or audit an owned copy before reopening");int e=0,w=0;if(ownsDrawing)drawing=sw.OpenDoc6(path,3,1,"",ref e,ref w) as IModelDoc2;Require(drawing!=null&&!drawing.GetSaveFlag(),"Cannot verify an unsaved/modified drawing");dr=(IDrawingDoc)drawing;report["native_baseline"]=NativeInventory(drawing);report["native_bindings"]=ReadBindings();
+   var p=Read(planPath);measureEnvelopes=p.ContainsKey("layout");var f=Read(S(p,"facts"));string path=S(p,"output_drawing");Require(Path.IsPathRooted(path)&&File.Exists(path),"Saved native drawing required");Require(SharedReadHash(S(f,"path"))==S(f,"sha256"),"Source changed since inspection");string nativeBefore=SharedReadHash(path);
+   sw=(ISldWorks)Marshal.GetActiveObject("SldWorks.Application");drawing=sw.GetOpenDocumentByName(path) as IModelDoc2;ownsDrawing=drawing==null;Require(ownsDrawing,"Preexisting drawing preserved: close it or audit an owned copy before reopening");int e=0,w=0;if(ownsDrawing)drawing=sw.OpenDoc6(path,3,1,"",ref e,ref w) as IModelDoc2;Require(drawing!=null&&!drawing.GetSaveFlag(),"Cannot verify an unsaved/modified drawing");dr=(IDrawingDoc)drawing;report["native_baseline"]=NativeInventory(drawing);report["native_bindings"]=ReadBindings();if(p.ContainsKey("layout"))report["envelope_layout"]=ReadLayout(planPath);
    var sourceDoc=sw.GetOpenDocumentByName(S(f,"path")) as IModelDoc2;Require(sourceDoc==null||!sourceDoc.GetSaveFlag(),"Referenced source has unsaved changes");SnapshotReopen(p,report);Require(SharedReadHash(path)==nativeBefore,"Input native drawing changed");Require(SharedReadHash(S(f,"path"))==S(f,"sha256"),"Source changed during verification");report["source_hash_unchanged"]=true;report["native_hash_unchanged"]=true;report["status"]="NATIVE_REOPEN_VERIFIED";
   }catch(Exception ex){report["error"]=ex.Message;}
   finally{if(ownsDrawing&&drawing!=null)try{sw.CloseDoc(drawing.GetTitle());report["verification_drawing_closed"]=true;}catch(Exception ex){report["cleanup_error"]=ex.Message;report["status"]="FAILED";}ReleaseSessionReferences();}
@@ -141,7 +149,7 @@ public static partial class DrawingEngine {
  public static Dictionary<string,object> Visibility(string planPath){
   var report=D("status","FAILED","plan",planPath);IModelDoc2 model=null;bool wasOpen=false;string oldCfg="",source="",before="",created="";
   try {
-   var p=Read(planPath);var f=Read(S(p,"facts"));Validate(p,f);source=S(f,"path");before=Hash(source);Require(before==S(f,"sha256"),"Source changed: inspect again");
+   var p=Read(planPath);measureEnvelopes=p.ContainsKey("layout");var f=Read(S(p,"facts"));Validate(p,f);source=S(f,"path");before=Hash(source);Require(before==S(f,"sha256"),"Source changed: inspect again");
    sw=(ISldWorks)Marshal.GetActiveObject("SldWorks.Application");model=Source(source,S(f,"configuration"),out wasOpen,out oldCfg);
    var sh=Map(p["sheet"]);drawing=(IModelDoc2)sw.NewDocument(S(p,"template"),12,0,0);Require(drawing!=null,"Create preview drawing failed");created=drawing.GetTitle();dr=(IDrawingDoc)drawing;
    var sheet=(ISheet)dr.GetCurrentSheet();PreserveTemplate(p,sheet);
@@ -159,7 +167,7 @@ public static partial class DrawingEngine {
     }
     results.Add(D("view",kv.Key,"visible_circle_count",circles.Count,"source_circle_matches",matches,"visible_lines",lines));
    }
-   report["views"]=results;report["source_hash_unchanged"]=Hash(source)==before;Require(Convert.ToBoolean(report["source_hash_unchanged"]),"Source changed during visibility preview");report["status"]="VISIBILITY_MEASURED";
+   report["views"]=results;report["model_dimension_inventory"]=ModelDimensionInventory(p,null);report["source_hash_unchanged"]=Hash(source)==before;Require(Convert.ToBoolean(report["source_hash_unchanged"]),"Source changed during visibility preview");report["status"]="VISIBILITY_MEASURED";
   }catch(Exception ex){report["error"]=ex.Message;}
   finally{if(!String.IsNullOrEmpty(created)&&sw!=null)try{sw.CloseDoc(created);}catch(Exception ex){report["cleanup_error"]=ex.Message;}try{if(sw!=null&&!string.IsNullOrEmpty(source))Restore(sw.GetOpenDocumentByName(source) as IModelDoc2,wasOpen,oldCfg);}catch(Exception ex){report["restore_error"]=ex.Message;report["status"]="FAILED";}ReleaseSessionReferences();}
   return report;
@@ -167,20 +175,20 @@ public static partial class DrawingEngine {
  public static Dictionary<string,object> Execute(string planPath){
   var report=D("status","FAILED","plan",planPath,"visual_review","NOT_CHECKED","manufacturing_release","NOT_APPROVED");IModelDoc2 model=null;bool wasOpen=false,ownsDrawing=false;string oldCfg="",before="",source="";
   try{
-   var p=Read(planPath);var f=Read(S(p,"facts"));Validate(p,f);source=S(f,"path");before=Hash(source);Require(before==S(f,"sha256"),"Source changed: inspect again");sw=(ISldWorks)Marshal.GetActiveObject("SldWorks.Application");model=Source(source,S(f,"configuration"),out wasOpen,out oldCfg);
-   var sh=Map(p["sheet"]);drawing=(IModelDoc2)sw.NewDocument(S(p,"template"),12,0,0);Require(drawing!=null,"Create drawing failed");ownsDrawing=true;bindings=new Dictionary<string,object>();dr=(IDrawingDoc)drawing;report["created_document_title"]=drawing.GetTitle();var sheet=(ISheet)dr.GetCurrentSheet();PreserveTemplate(p,sheet);report["template_preserved"]=true;report["template_format"]=sheet.GetTemplateName();int e=0,w=0;sw.ActivateDoc3(drawing.GetTitle(),false,0,ref e);dr.EditSheet();views=new Dictionary<string,IView>();
+   var p=Read(planPath);measureEnvelopes=p.ContainsKey("layout");var f=Read(S(p,"facts"));Validate(p,f);source=S(f,"path");before=Hash(source);Require(before==S(f,"sha256"),"Source changed: inspect again");sw=(ISldWorks)Marshal.GetActiveObject("SldWorks.Application");model=Source(source,S(f,"configuration"),out wasOpen,out oldCfg);
+   var sh=Map(p["sheet"]);drawing=(IModelDoc2)sw.NewDocument(S(p,"template"),12,0,0);Require(drawing!=null,"Create drawing failed");ownsDrawing=true;bindings=new Dictionary<string,object>();dr=(IDrawingDoc)drawing;report["created_document_title"]=drawing.GetTitle();LayoutProgress(report,"drawing_created");var sheet=(ISheet)dr.GetCurrentSheet();PreserveTemplate(p,sheet);report["template_preserved"]=true;report["template_format"]=sheet.GetTemplateName();int e=0,w=0;sw.ActivateDoc3(drawing.GetTitle(),false,0,ref e);dr.EditSheet();views=new Dictionary<string,IView>();
    foreach(var o in Rows(p["views"])){var v=Map(o);views.Add(S(v,"id"),ModelView(v,source,S(f,"configuration")));}
    Require(sheet.SetScale(N(Map(Rows(p["views"])[0]),"scale"),1,false,false),"Sheet scale update failed");foreach(var o in Rows(p["sections"])){var s=Map(o);views.Add(S(s,"id"),Section(s));}
    var checks=new List<object>();foreach(var o in Rows(p["dimensions"]))checks.Add(Dimension(Map(o)));report["dimensions"]=checks;
    var edges=Edges(f);foreach(var o in OptionalRows(p,"diameters"))checks.Add(Diameter(Map(o),edges,model));foreach(var o in Rows(p["labels"]))Label(Map(o),edges,model);
-   FeatureDimensions(p,edges,model);ImportAnnotations(p);foreach(var o in Rows(p["tables"]))Table(Map(o));dr.ActivateView("");foreach(var o in Rows(p["notes"])){var n=Map(o);var note=Note(S(n,"text"),Vec(n["position_mm"]));Bind(S(n,"id"),(IAnnotation)note.GetAnnotation(),"");}drawing.ClearSelection2(true);Require(drawing.ForceRebuild3(false),"Drawing rebuild failed");
-   Arrange(p);Require(drawing.ForceRebuild3(false),"Post-arrangement rebuild failed");
+   FeatureDimensions(p,edges,model);ImportAnnotations(p,report);foreach(var o in Rows(p["tables"]))Table(Map(o));dr.ActivateView("");foreach(var o in Rows(p["notes"])){var n=Map(o);var note=Note(ResolveScaleText(S(n,"text")),Vec(n["position_mm"]));Bind(S(n,"id"),(IAnnotation)note.GetAnnotation(),"");}drawing.ClearSelection2(true);Require(drawing.ForceRebuild3(false),"Drawing rebuild failed");
+   LayoutProgress(report,"annotations_created");Arrange(p);LineHierarchy(p);Require(drawing.ForceRebuild3(false),"Post-arrangement rebuild failed");EnvelopeLayout(p,planPath,report);
    var boxes=new List<object>();var flags=new List<object>();var extents=new Dictionary<string,double[]>();
    foreach(var kv in views){var box=(double[])kv.Value.GetOutline();var mm=new double[4];for(int i=0;i<4;i++)mm[i]=box[i]*1000;extents.Add(kv.Key,mm);boxes.Add(D("view",kv.Key,"outline_mm",mm));if(mm[0]<0||mm[1]<0||mm[2]>N(sh,"width_mm")||mm[3]>N(sh,"height_mm"))flags.Add("Out-of-sheet view: "+kv.Key);}
    var names=new List<string>(extents.Keys);for(int i=0;i<names.Count;i++)for(int j=i+1;j<names.Count;j++){var a=extents[names[i]];var b=extents[names[j]];if(Math.Min(a[2],b[2])>Math.Max(a[0],b[0])&&Math.Min(a[3],b[3])>Math.Max(a[1],b[1]))flags.Add("Possible view overlap: "+names[i]+" / "+names[j]);}
    report["view_bounds"]=boxes;report["layout_flags"]=flags;report["unresolved"]=p["unresolved"];
-   SaveBindings(report);report["native_baseline"]=NativeInventory(drawing);string output=S(p,"output_drawing");Directory.CreateDirectory(Path.GetDirectoryName(output));bool saved=drawing.Extension.SaveAs(output,0,1,null,ref e,ref w);Require(saved&&e==0&&File.Exists(output),"Native drawing save failed: "+e);report["drawing"]=D("path",output,"status","PASS","warnings",w);
-   SnapshotReopen(p,report);Require(Hash(source)==before,"Source hash changed");report["source_integrity"]="PASS";report["status"]=flags.Count==0?"NATIVE_VERIFIED_REVIEW_REQUIRED":"NATIVE_VERIFIED_LAYOUT_REVIEW_REQUIRED";
+   LayoutProgress(report,"save_bindings");SaveBindings(report);LayoutProgress(report,"save_native");report["native_baseline"]=NativeInventory(drawing);string output=S(p,"output_drawing");Directory.CreateDirectory(Path.GetDirectoryName(output));bool saved=drawing.Extension.SaveAs(output,0,1,null,ref e,ref w);Require(saved&&e==0&&File.Exists(output),"Native drawing save failed: "+e);report["drawing"]=D("path",output,"status","PASS","warnings",w);
+   LayoutProgress(report,"reopen_native");SnapshotReopen(p,report);Require(Hash(source)==before,"Source hash changed");report["source_integrity"]="PASS";report["status"]=flags.Count==0?"NATIVE_VERIFIED_REVIEW_REQUIRED":"NATIVE_VERIFIED_LAYOUT_REVIEW_REQUIRED";
   }catch(Exception ex){report["error"]=ex.Message;}
   finally{try{if(ownsDrawing&&drawing!=null){sw.CloseDoc(drawing.GetTitle());report["generated_drawing_closed"]=true;}if(sw!=null&&!string.IsNullOrEmpty(source))Restore(sw.GetOpenDocumentByName(source) as IModelDoc2,wasOpen,oldCfg);}catch(Exception ex){report["restore_error"]=ex.Message;report["error"]=ex.Message;report["status"]="FAILED";}if(!string.IsNullOrEmpty(before)&&File.Exists(source))report["source_hash_unchanged"]=Hash(source)==before;ReleaseSessionReferences();}
   return report;

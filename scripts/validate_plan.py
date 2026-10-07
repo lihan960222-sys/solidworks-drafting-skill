@@ -61,6 +61,7 @@ def check_coverage(plan,facts):
     return {'complete':not incomplete,'incomplete':incomplete,'features_checked':len(facts.get('draft_features',[]))}
 
 def check_supported(plan):
+    check_layout_options(plan)
     if plan.get('details'):raise ValueError('Native detail view backend is not implemented')
     if plan.get('dimension_scheme'):raise ValueError('Auto Dimension Scheme requires verified explicit-rule backend; do not apply default tolerances')
     if plan.get('style') or plan.get('export'):raise ValueError('Unimplemented style/export overrides; use the selected template and explicit backend')
@@ -68,8 +69,9 @@ def check_supported(plan):
     orthos=[v['scale'] for v in plan.get('views',[]) if not any(s in v['model_view'].lower() for s in ('isometric','等轴','等軸'))]
     if orthos and any(x!=orthos[0] for x in orthos):raise ValueError('Related orthographic views require the same scale')
     model=plan.get('model_dimensions',{})
-    if set(model)-{'keep','include_unmarked','positions'}:raise ValueError('Unknown model dimension options')
-    if type(model.get('include_unmarked',False)) is not bool:raise ValueError('include_unmarked must be boolean')
+    if set(model)-{'keep','include_unmarked','include_hidden_features','positions'}:raise ValueError('Unknown model dimension options')
+    for option in ('include_unmarked','include_hidden_features'):
+        if type(model.get(option,False)) is not bool:raise ValueError(option+' must be boolean')
     keep=model.get('keep',[])
     if len(set(keep))!=len(keep) or any(not isinstance(x,str) or not x.strip() for x in keep):raise ValueError('Invalid retained model dimension identity')
     seen=set()
@@ -77,6 +79,73 @@ def check_supported(plan):
         if item['name'] not in keep or item['name'] in seen:raise ValueError('Placement requires unique retained model dimension')
         seen.add(item['name']);xy=item['position_mm'];sh=plan['sheet']
         if len(xy)!=2 or any(type(x) not in (float,int) or not math.isfinite(x) for x in xy) or not (0<xy[0]<sh['width_mm'] and 0<xy[1]<sh['height_mm']):raise ValueError('Invalid model dimension position')
+
+def check_layout_options(plan):
+    if type(plan.get('line_hierarchy',True)) is not bool:raise ValueError('line_hierarchy must be boolean')
+    if 'layout' not in plan:return
+    layout=plan['layout'];keys={'usable_bounds_mm','reserved_boxes_mm','orthographic_views','gap_mm','padding_mm'}
+    if not isinstance(layout,dict) or not keys<=set(layout) or set(layout)-keys-{'scale_factors','fill_range','target_fill'}:raise ValueError('Invalid measured layout fields')
+    sh=plan['sheet']
+    def box(b):return isinstance(b,list) and len(b)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in b) and 0<=b[0]<b[2]<=sh['width_mm'] and 0<=b[1]<b[3]<=sh['height_mm']
+    if not box(layout['usable_bounds_mm']) or not isinstance(layout['reserved_boxes_mm'],list) or any(not box(b) for b in layout['reserved_boxes_mm']):raise ValueError('Invalid template layout bounds')
+    for k in ('gap_mm','padding_mm'):
+        if type(layout[k]) not in (int,float) or not math.isfinite(layout[k]) or layout[k]<0:raise ValueError('Invalid layout '+k)
+    factors=layout.get('scale_factors',[1,.95,.9,.85,.8,.75,.625,.5,.375,.25,.2,.125])
+    if not isinstance(factors,list) or not factors or len(factors)>12 or factors[0]!=1 or any(type(x) not in (int,float) or not math.isfinite(x) or x<=0 for x in factors) or any(a<=b for a,b in zip(factors,factors[1:])):raise ValueError('Invalid descending layout scale_factors')
+    fill=layout.get('fill_range',[.45,.65]);target=layout.get('target_fill',.55)
+    if not isinstance(fill,list) or len(fill)!=2 or type(target) not in (int,float) or not math.isfinite(target) or any(type(x) not in (int,float) or not math.isfinite(x) for x in fill) or not 0<fill[0]<=target<=fill[1]<1:raise ValueError('Invalid layout fill target/range')
+    roles=layout['orthographic_views'];views={v['id'] for v in plan.get('views',[])}
+    if not isinstance(roles,dict) or 'front' not in roles or set(roles)-{'front','top','right'} or not set(roles.values())<=views or len(set(roles.values()))!=len(roles):raise ValueError('Invalid orthographic view roles')
+
+def dimension_key(name):
+    return '@'.join(name.split('@')[:2])
+
+def check_model_dimensions(plan,facts):
+    keep=plan.get('model_dimensions',{}).get('keep',[])
+    keys=[dimension_key(name) for name in keep]
+    if len(keys)!=len(set(keys)):raise ValueError('Duplicate aliases refer to the same model dimension')
+    names={d['name'] for f in facts.get('features',[]) for d in f.get('dimensions',[])}
+    known={dimension_key(name) for name in names}
+    for name in keep:
+        if name not in names and name not in known:raise ValueError('Selected dimension is absent from source facts: '+name)
+
+def check_geometry_audit(plan,facts):
+    """Check the recorded geometric proof, not automatic reconstruction of a B-rep."""
+    audit=plan.get('geometry_audit')
+    if not isinstance(audit,dict):raise ValueError('Missing geometric completeness audit')
+    if audit.get('scope')!='nominal_geometry' or audit.get('source_sha256')!=facts.get('sha256'):raise ValueError('Geometry audit source/scope mismatch')
+    for key in ('missing_definitions','redundant_definitions'):
+        if not isinstance(audit.get(key),list) or audit[key]:raise ValueError('Incomplete or redundant geometry audit: '+key)
+    checks=('feature_inventory','sizes','locations','orientations','depths_and_sections','patterns_and_relations','dimension_chains','nonredundancy','reconstruction')
+    for key in checks:
+        check=audit.get('checks',{}).get(key,{})
+        if check.get('passed') is not True or not isinstance(check.get('evidence'),str) or not check['evidence'].strip():raise ValueError('Unproven geometry audit check: '+key)
+    definitions=audit.get('definitions',[])
+    if not isinstance(definitions,list) or not definitions:raise ValueError('Empty geometry audit definitions')
+    by_id={};semantic=set();bound=set();ids=set(plan.get('dimension_ids',[]))
+    for d in definitions:
+        if any(not isinstance(d.get(k),str) or not d[k].strip() for k in ('id','entity','property','frame','evidence')):raise ValueError('Incomplete geometric definition identity/evidence')
+        key=(d['entity'],d['property'],d['frame'])
+        if d['id'] in by_id or key in semantic:raise ValueError('Duplicate geometric definition: '+d['id'])
+        by_id[d['id']]=d;semantic.add(key)
+        if d.get('annotation'):
+            if d['annotation'] not in ids or d.get('depends_on'):raise ValueError('Driving definition requires one planned annotation and no derived dependency')
+            bound.add(d['annotation'])
+        elif not isinstance(d.get('depends_on'),list) or not d['depends_on'] or not isinstance(d.get('equation'),str) or not d['equation'].strip():raise ValueError('Derived definition requires dependencies and explicit equation')
+    active=set();done=set()
+    def visit(ident):
+        if ident not in by_id:raise ValueError('Unknown geometric dependency: '+str(ident))
+        if ident in active:raise ValueError('Geometry dimension-chain cycle: '+ident)
+        if ident in done:return
+        active.add(ident)
+        for dep in by_id[ident].get('depends_on',[]):visit(dep)
+        active.remove(ident);done.add(ident)
+    for ident in by_id:visit(ident)
+    driving={x['id'] for k in ('dimensions','diameters','linear','radial') for x in plan.get(k,[])}
+    driving.update('model:'+n for n in plan.get('model_dimensions',{}).get('keep',[]))
+    driving.update('table:'+n for t in plan.get('tables',[]) for n in t['feature_ids'])
+    if driving-bound:raise ValueError('Unmapped driving dimensions in geometry audit: '+str(sorted(driving-bound)))
+    return {'status':'PASS','definitions_checked':len(definitions),'driving_annotations_checked':len(driving),'method':'RECORDED_AGENT_GEOMETRY_REVIEW','automatic_reconstruction':False}
 
 def check_experimental(plan,facts):
     views={v['id'] for k in ('views','sections') for v in plan.get(k,[])};edges={e['id']:e for e in facts['edges']};sh=plan['sheet']
@@ -98,10 +167,11 @@ def check_experimental(plan,facts):
 
 def validate(plan, facts=None, allow_existing=False):
     if plan.get('version')!=2:raise ValueError('Expected drafting plan v2')
-    allowed={'version','facts','output_drawing','output_dwg','output_pdf','template','sheet','views','dimensions','diameters','sections','details','labels','tables','notes','unresolved','coverage','dimension_ids','model_dimensions','import_pmi','auto_arrange','linear','radial','export','style','dimension_scheme'}
+    allowed={'version','facts','output_drawing','output_dwg','output_pdf','template','sheet','views','dimensions','diameters','sections','details','labels','tables','notes','unresolved','coverage','dimension_ids','model_dimensions','import_pmi','auto_arrange','linear','radial','export','style','dimension_scheme','geometry_audit','layout','line_hierarchy'}
     if set(plan)-allowed:raise ValueError('Unknown fields: '+str(set(plan)-allowed))
     check_supported(plan)
     facts=facts or json.loads(Path(plan['facts']).read_text(encoding='utf-8-sig'))
+    check_model_dimensions(plan,facts)
     check_experimental(plan,facts)
     for key,suffix in (('output_drawing','.slddrw'),('output_dwg','.dwg'),('output_pdf','.pdf')):
         value=plan.get(key,'')

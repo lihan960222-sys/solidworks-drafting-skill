@@ -1,11 +1,107 @@
 """Bounded paper/scale search. Coordinates are millimetres, text size stays fixed."""
 import math
+import itertools
 
 PAPERS = {'A4':(297,210), 'A3':(420,297), 'A2':(594,420)}
 SCALES = (2,1.5,1,0.75,0.5,0.2,0.1,0.05)
 
 def overlaps(a,b):
     return min(a[2],b[2])>max(a[0],b[0]) and min(a[3],b[3])>max(a[1],b[1])
+
+def pack_envelopes(blocks, first_angle, usable_bounds_mm, table_sizes_mm=None,
+                   reserved_boxes_mm=None, gap_mm=12, orthographic_views=None):
+    """Translate measured asymmetric blocks. No scaling, annotation removal or rotation.
+
+    Keep the orthographic centres aligned; pack supporting blocks around that group.
+    This bounded corner/grid search can reject a layout a general packing solver finds.
+    """
+    def box_ok(box):
+        return len(box)==4 and all(type(x) in (int,float) and math.isfinite(x) for x in box) and box[0]<box[2] and box[1]<box[3]
+    if type(first_angle) is not bool or not box_ok(usable_bounds_mm) or not math.isfinite(gap_mm) or gap_mm<0:
+        raise ValueError('Invalid envelope layout bounds/projection/gap')
+    roles=orthographic_views or {k:k for k in ('front','top','right') if k in blocks}
+    if 'front' not in roles or roles['front'] not in blocks or len(set(roles.values()))!=len(roles):
+        raise ValueError('Envelope layout requires unique orthographic view roles')
+    local={}
+    for key,block in blocks.items():
+        p=block['position_mm'];b=block['bounds_mm']
+        if not box_ok(b) or len(p)!=2 or any(not math.isfinite(v) for v in p):raise ValueError('Invalid measured envelope')
+        local[key]=[b[0]-p[0],b[1]-p[1],b[2]-p[0],b[3]-p[1]]
+    ux,uy,ur,ut=usable_bounds_mm
+    tables=[];ty=ut
+    for tw,th in table_sizes_mm or []:
+        if not all(math.isfinite(x) and x>0 for x in (tw,th)):raise ValueError('Invalid table extent')
+        table=[ur-tw,ty-th,ur,ty];tables.append(table);ty-=th+gap_mm
+    obstacles=list(reserved_boxes_mm or [])
+    if any(not box_ok(b) for b in obstacles):raise ValueError('Invalid reserved box')
+    def inside(b):return ux-1e-8<=b[0] and uy-1e-8<=b[1] and b[2]<=ur+1e-8 and b[3]<=ut+1e-8
+    def clear(b,others):
+        return inside(b) and all(not overlaps([b[0]-gap_mm/2,b[1]-gap_mm/2,b[2]+gap_mm/2,b[3]+gap_mm/2],
+                                            [r[0]-gap_mm/2,r[1]-gap_mm/2,r[2]+gap_mm/2,r[3]+gap_mm/2]) for r in others)
+    if any(not inside(b) or any(overlaps(b,r) for r in obstacles) for b in tables):raise ValueError('Tables do not fit upper-right region')
+    obstacles+=tables
+    front=roles['front'];f=local[front];centres={front:[0,0]}
+    if 'right' in roles:
+        key=roles['right'];b=local[key]
+        centres[key]=[f[0]-gap_mm-b[2] if first_angle else f[2]+gap_mm-b[0],0]
+    if 'top' in roles:
+        key=roles['top'];b=local[key]
+        centres[key]=[0,f[1]-gap_mm-b[3] if first_angle else f[3]+gap_mm-b[1]]
+    def translated(key,p):
+        b=local[key];return [b[0]+p[0],b[1]+p[1],b[2]+p[0],b[3]+p[1]]
+    group={k:translated(k,p) for k,p in centres.items()}
+    # Side/top blocks also need the full gap near the orthographic group's corner.
+    if 'top' in roles and 'right' in roles:
+        key=roles['top'];top=group[key];side=group[roles['right']]
+        clearance=max(top[0]-side[2],side[0]-top[2],top[1]-side[3],side[1]-top[3])
+        if clearance<gap_mm:
+            vertical=side[1]-top[3] if first_angle else top[1]-side[3]
+            centres[key][1]+=(gap_mm-vertical)*(-1 if first_angle else 1)
+            group[key]=translated(key,centres[key])
+    # Nonadjacent top/side blocks may have asymmetric annotations that collide.
+    if any(overlaps(a,b) for a,b in itertools.combinations(group.values(),2)):
+        raise ValueError('Orthographic annotation envelopes do not fit aligned group')
+    gb=[min(b[0] for b in group.values()),min(b[1] for b in group.values()),
+        max(b[2] for b in group.values()),max(b[3] for b in group.values())]
+    extra=sorted(set(blocks)-set(centres),key=lambda k:-(local[k][2]-local[k][0])*(local[k][3]-local[k][1]))
+    def candidates(b,occupied):
+        w=b[2]-b[0];h=b[3]-b[1]
+        xs={ux,ur-w,(ux+ur-w)/2};ys={uy,ut-h,(uy+ut-h)/2}
+        for r in occupied:
+            xs.update((r[0]-gap_mm-w,r[2]+gap_mm));ys.update((r[1]-gap_mm-h,r[3]+gap_mm))
+        xs.update(ux+i*5 for i in range(max(0,int((ur-ux-w)/5)+1)))
+        ys.update(uy+i*5 for i in range(max(0,int((ut-uy-h)/5)+1)))
+        return sorted(((x,y) for x in xs for y in ys if inside([x,y,x+w,y+h])),
+                      key=lambda p:(p[0]-(ux+ur-w)/2)**2+(p[1]-(uy+ut-h)/2)**2)
+    for gx,gy in candidates(gb,obstacles):
+        delta=[gx-gb[0],gy-gb[1]]
+        pos={k:[p[0]+delta[0],p[1]+delta[1]] for k,p in centres.items()}
+        boxes={k:translated(k,p) for k,p in pos.items()}
+        if any(not clear(b,obstacles) for b in boxes.values()):continue
+        occupied=list(boxes.values())+obstacles
+        for key in extra:
+            found=False
+            for x,y in candidates(local[key],occupied):
+                p=[x-local[key][0],y-local[key][1]];b=translated(key,p)
+                if clear(b,occupied):pos[key]=p;boxes[key]=b;occupied.append(b);found=True;break
+            if not found:break
+        else:
+            content=list(boxes.values())+tables
+            area=sum((b[2]-b[0])*(b[3]-b[1]) for b in content)
+            cb=[min(b[0] for b in content),min(b[1] for b in content),max(b[2] for b in content),max(b[3] for b in content)]
+            return {'positions_mm':pos,'bounds_mm':boxes,'table_bounds_mm':tables,
+                    'table_positions_mm':[[b[0],b[3]] for b in tables],
+                    'group_bounds_mm':[gx,gy,gx+gb[2]-gb[0],gy+gb[3]-gb[1]],
+                    'method':'MEASURED_ANNOTATION_ENVELOPES','scale_changed':False,
+                    'occupied_fraction':area/((ur-ux)*(ut-uy)),
+                    'balance_offset_mm':[(cb[0]+cb[2]-ux-ur)/2,(cb[1]+cb[3]-uy-ut)/2]}
+    raise ValueError('Measured annotation envelopes do not fit; retain dimensions and revise scale/views/lanes')
+
+
+if __name__=='__main__':
+    import json,sys
+    data=json.load(sys.stdin)
+    print(json.dumps(pack_envelopes(**data)))
 
 def unique_definitions(items):
     seen=set(); result=[]

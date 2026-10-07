@@ -16,11 +16,17 @@ Required roots: `version: 2`, `facts`, `template`, `output_drawing`, `output_dwg
 | `sections[]` | See the bundled `validate_native.py` section validator for the exact straight-section fields; the cut is a real native section |
 | `labels[]` | `id`, `view`, `edge_id`, `text`, `offset_mm`; attaches to a uniquely matched visible circle |
 | `notes[]` | `id`, `text`, `position_mm`; inherit template text format, font overrides are rejected |
-| `model_dimensions` | `include_unmarked` boolean, `keep` list of exact native dimension names; optional `positions: [{name, position_mm}]` moves only retained dimensions; imported IDs become `model:<name>` |
+| `model_dimensions` | `include_unmarked` and `include_hidden_features` booleans (default false), `keep` list of measured native dimension identities; optional `positions: [{name, position_mm}]` moves only retained dimensions; imported IDs become `model:<name>` |
 | `import_pmi` | Boolean. Imports existing DimXpert-related annotations through `IView.ImportAnnotations`; no tolerance generation |
 | `auto_arrange` | Boolean. Aligns selected dimensions locally with native `AlignDimensions`; does not prove global collision freedom |
 
+New plans include `layout` and `line_hierarchy` as described in [envelope-layout.md](envelope-layout.md). View/annotation positions are initial authoring positions; the saved measured layout records final translated positions and is bound to the plan hash. Legacy plans without `layout` retain fixed positions. `line_hierarchy` is boolean; it defaults to true in native creation. Explicit true enables reopened style acceptance. Arbitrary `style` overrides remain unsupported.
+
 Related orthographic views share a scale; an isometric can use another scale with a visible scale note. Do not use the scale to change nominal sizes. Existing model dimensions are selectively retained by identity, not by number alone.
+
+Before freezing `keep`, run `Visibility` on the tentative view plan with the intended import flags. Its `model_dimension_inventory` reports actual `dimensions` (`name`, full `source_name`, view, SI value, display type, position and dangling state), `returned_annotations`, and requested `matched`/`missing` names. It creates and closes an unsaved temporary drawing; it does not save deliverables. With no `model_dimensions` object, this diagnostic includes unmarked dimensions and excludes hidden features. An explicit object uses the flags above. Rerun this measurement if views, configuration or import flags change.
+
+Accept `D1@Feature` or the exact full source identity `D1@Feature@Part.Part`; aliases for the same dimension cannot both be kept. Inspection facts validate source identity but cannot prove drawing importability. The executor imports through the same native method and source/drawing/view activation sequence as automation-port, then retains only the selected identities. Missing requested identities still fail with a `model_dimension_import` report; successful partial native insertion cannot satisfy an overbroad `keep` list. Select necessary engineering definitions, rather than copying all source parameters into `keep`. Existing coverage gates still reject missing required definitions.
 
 `tables[]`: `role` is `nominal_hole_schedule` or `nominal_feature_schedule`; include `position_mm`, `row_height_mm`, `column_widths_mm`, rectangular string `rows` (header first), `feature_ids`, `units`, `row_evidence`, and `evidence`. Row first cells must equal the corresponding unique IDs. Each ID must appear as a visible label. Hole schedules require 3D `origin`, global `axes: ["X","Y"]` and `units: "mm"`; headers ID, X (mm), Y (mm), D (mm), Depth and Qty/Count; each row is one labelled hole with quantity 1 and exact `edges:<id>` evidence matching its label. Coordinates/diameter are checked against that circle; depth/THRU is checked against matching cylindrical faces and body bounds. Other frames, grouped quantities and arbitrary column layouts need a verified backend. The agent must review each row's feature meaning, face type and consistency with drawn dimensions; general feature schedules remain a manually reviewed representation.
 
@@ -28,11 +34,14 @@ Related orthographic views share a scale; an isometric can use another scale wit
 
 Nonempty `details`, `dimension_scheme`, `style` and `export` overrides are rejected; they must never be silently ignored. The template supplies styles and the current export backend is explicit. Do not add guessed dimensions, PMI or metadata merely to make coverage pass.
 
+Final native/output acceptance also requires `geometry_audit` as specified in [geometric-definition.md](geometric-definition.md). Tentative plans can omit it for Inspect/Visibility or module debugging, but cannot receive native or delivery acceptance without it. Source-bound review evidence, independent semantic definitions, complete chains and no unresolved/redundant definitions are mandatory. This is a checked review record, not an automatic geometric reconstruction solver.
+
 Modes:
 
 ```powershell
 # Run with Windows PowerShell 5.1 -NoProfile -Sta -ExecutionPolicy Bypass
 & <skill>/scripts/run.ps1 -Mode Inspect -Source <saved-part> -Output <internal/facts.json> -Python <python>
+& <skill>/scripts/run.ps1 -Mode Visibility -Plan <internal/tentative-plan.json> -Output <internal/visibility.json> -Python <python>
 & <skill>/scripts/run.ps1 -Mode Execute -Plan <internal/plan.json> -Output <internal/execution.json> -Python <python>
 ```
 

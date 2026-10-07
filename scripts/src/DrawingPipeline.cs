@@ -25,10 +25,13 @@ public static partial class DrawingEngine {
  static object NativeInventory(IModelDoc2 doc) {
   var rows=new List<object>();
   for(var v=(IView)((IDrawingDoc)doc).GetFirstView();v!=null;v=(IView)v.GetNextView()) {
+   bool modelView=!String.IsNullOrEmpty(v.GetReferencedModelName());var envelope=modelView&&measureEnvelopes?Vec(v.GetOutline()).Select(x=>x*1000).ToArray():null;
    var items=new List<object>();
    foreach(var ao in A(v.GetAnnotations())) {
     var a=(IAnnotation)ao;var specific=a.GetSpecificAnnotation();
     var item=D("annotation_name",a.GetName(),"type",a.GetType(),"dangling",a.IsDangling(),"position",a.GetPosition());
+    item["line_width"]=a.Width;item["color"]=a.Color;
+    if(measureEnvelopes){var b=AnnotationEnvelope(a);item["bounds_mm"]=b;if(modelView&&b!=null){envelope[0]=Math.Min(envelope[0],b[0]);envelope[1]=Math.Min(envelope[1],b[1]);envelope[2]=Math.Max(envelope[2],b[2]);envelope[3]=Math.Max(envelope[3],b[3]);}}
     var dd=specific as IDisplayDimension;var note=specific as INote;var table=specific as ITableAnnotation;
     if(dd!=null){var dim=(IDimension)dd.GetDimension2(0);string name=dim.FullName;if(name.Count(c=>c=='@')>=2)name=name.Substring(0,name.LastIndexOf('@'));item["name"]=name;item["value_si"]=dim.SystemValue;item["prefix"]=dd.GetText(1);item["suffix"]=dd.GetText(2);}
     else if(note!=null)item["text"]=note.GetText();
@@ -36,7 +39,9 @@ public static partial class DrawingEngine {
     else item["name"]=a.GetName();
     items.Add(item);
    }
-   rows.Add(D("view",v.Name,"source",v.GetReferencedModelName(),"configuration",v.ReferencedConfiguration,"scale",v.ScaleDecimal,"orientation",v.GetOrientationName(),"position",v.Position,"outline",v.GetOutline(),"annotations",items));
+   var viewRow=D("view",v.Name,"source",v.GetReferencedModelName(),"configuration",v.ReferencedConfiguration,"scale",v.ScaleDecimal,"orientation",v.GetOrientationName(),"position",v.Position,"outline",v.GetOutline(),"annotations",items,"line_hierarchy",LineHierarchySnapshot(doc));
+   if(measureEnvelopes&&modelView)viewRow["envelope_mm"]=envelope;
+   rows.Add(viewRow);
   }
   return rows;
  }
@@ -64,24 +69,51 @@ public static partial class DrawingEngine {
   facts["draft_features"]=required;facts["schema_version"]=2;
   facts["coverage_limits"]="Feature-derived requirements must be supplemented by the agent's face/edge inventory for sketch locations, blind depths and unnamed geometric features.";
  }
- static void ImportAnnotations(Dictionary<string,object> p){
+ static Dictionary<string,object> ModelDimensionInventory(Dictionary<string,object> p,HashSet<string> original){
+  var options=p.ContainsKey("model_dimensions")?Map(p["model_dimensions"]):D("include_unmarked",true);
+  bool unmarked=options.ContainsKey("include_unmarked")&&Convert.ToBoolean(options["include_unmarked"]);
+  bool hidden=options.ContainsKey("include_hidden_features")&&Convert.ToBoolean(options["include_hidden_features"]);
+  var first=views.Values.First();int activationError=0;
+  // Keep the legacy automation-port source -> drawing -> view activation order.
+  var sourceDoc=sw.GetOpenDocumentByName(first.GetReferencedModelName()) as IModelDoc2;
+  Require(sourceDoc!=null,"Referenced source must be open for model dimension import");
+  Require(sw.ActivateDoc3(sourceDoc.GetTitle(),false,1,ref activationError)!=null,"Activate dimension source failed: "+activationError);
+  Require(sw.ActivateDoc3(drawing.GetTitle(),false,1,ref activationError)!=null,"Activate dimension drawing failed: "+activationError);
+  Require(dr.ActivateView(first.Name),"Activate model view failed");drawing.ClearSelection2(true);
+  var inserted=Rows(dr.InsertModelAnnotations3(0,32768+(unmarked?524288:0),true,true,hidden,false));
+  Require(drawing.ForceRebuild3(false),"Imported dimension rebuild failed");
+  var dimensions=new List<object>();var nativeNames=new HashSet<string>();
+  foreach(var v in views.Values)for(var dd=(IDisplayDimension)v.GetFirstDisplayDimension5();dd!=null;dd=(IDisplayDimension)dd.GetNext5()){
+   var dim=(IDimension)dd.GetDimension2(0);if(original!=null&&original.Contains(dim.FullName))continue;
+   nativeNames.Add(dim.FullName);var a=(IAnnotation)dd.GetAnnotation();
+   dimensions.Add(D("name",String.Join("@",dim.FullName.Split('@').Take(2)),"source_name",dim.FullName,"view",v.Name,"value_si",dim.SystemValue,"display_type",dd.Type2,"position",a.GetPosition(),"dangling",a.IsDangling()));
+  }
+  var keep=OptionalRows(options,"keep").Select(Convert.ToString).ToArray();
+  Func<string,bool> matches=k=>nativeNames.Any(n=>n==k||n.StartsWith(k+"@",StringComparison.Ordinal));
+  return D("status","MEASURED","include_unmarked",unmarked,"include_hidden_features",hidden,"returned_annotations",inserted.Length,"dimensions",dimensions,"requested",keep,"matched",keep.Where(matches).ToArray(),"missing",keep.Where(k=>!matches(k)).ToArray());
+ }
+ static void ImportAnnotations(Dictionary<string,object> p,Dictionary<string,object> report){
   if(p.ContainsKey("model_dimensions")){
    var options=Map(p["model_dimensions"]);var keep=new HashSet<string>(OptionalRows(options,"keep").Select(Convert.ToString));
    var original=new HashSet<string>();foreach(var v in views.Values)for(var dd=(IDisplayDimension)v.GetFirstDisplayDimension5();dd!=null;dd=(IDisplayDimension)dd.GetNext5())original.Add(((IDimension)dd.GetDimension2(0)).FullName);
-   var first=views.Values.First();Require(dr.ActivateView(first.Name),"Activate model view failed");drawing.ClearSelection2(true);
-   int types=32768+(options.ContainsKey("include_unmarked")&&Convert.ToBoolean(options["include_unmarked"])?524288:0);
-   dr.InsertModelAnnotations3(0,types,true,true,false,false);
+   LayoutProgress(report,"model_import_start");var inventory=ModelDimensionInventory(p,original);report["model_dimension_import"]=inventory;LayoutProgress(report,"model_import_measured");
+   inventory["status"]=Rows(inventory["missing"]).Length==0?"PASS":"MISSING_REQUIRED";
+   Require(Rows(inventory["missing"]).Length==0,"Requested model dimensions were not imported: "+String.Join(",",Rows(inventory["missing"]).Select(Convert.ToString))+"; inspect Visibility.model_dimension_inventory before selecting keep");
    var found=new HashSet<string>();var remove=new List<IAnnotation>();
    foreach(var v in views.Values)for(var dd=(IDisplayDimension)v.GetFirstDisplayDimension5();dd!=null;dd=(IDisplayDimension)dd.GetNext5()){
     var dim=(IDimension)dd.GetDimension2(0);if(original.Contains(dim.FullName))continue;
     string key=keep.FirstOrDefault(k=>dim.FullName==k||dim.FullName.StartsWith(k+"@",StringComparison.Ordinal));
    if(key==null||!found.Add(key))remove.Add((IAnnotation)dd.GetAnnotation());else {
     var annotation=(IAnnotation)dd.GetAnnotation();TemplateFont(annotation);Bind("model:"+key,annotation,v.Name);
+    if(bindings!=null)Map(bindings["model:"+key])["dimension_name"]=String.Join("@",dim.FullName.Split('@').Take(2));
     foreach(var placement in OptionalRows(options,"positions")){var q=Map(placement);if(S(q,"name")==key){var xy=Vec(q["position_mm"]);Require(annotation.SetPosition2(xy[0]/1000,xy[1]/1000,0),"Imported dimension position failed");}}
    }
    }
    Require(found.SetEquals(keep),"Requested model dimensions were not imported: "+String.Join(",",keep.Except(found)));
-   drawing.ClearSelection2(true);foreach(var a in remove)Require(a.Select3(true,null),"Redundant dimension selection failed");if(remove.Count>0)Require(drawing.Extension.DeleteSelection2(0),"Dimension deduplication failed");drawing.ClearSelection2(true);
+   drawing.ClearSelection2(true);LayoutProgress(report,"model_import_prune:"+remove.Count);
+   int selected=0;foreach(var a in remove){Require(a.Select3(true,null),"Redundant dimension selection failed");selected++;if(selected%20==0)LayoutProgress(report,"model_import_prune_selected:"+selected);}
+   if(remove.Count>0)Require(drawing.Extension.DeleteSelection2(0),"Dimension deduplication failed");
+   drawing.ClearSelection2(true);LayoutProgress(report,"model_import_pruned");
   }
   if(p.ContainsKey("import_pmi")&&Convert.ToBoolean(p["import_pmi"]))foreach(var v in views.Values)v.ImportAnnotations(false,true,true,false,true);
  }
@@ -114,9 +146,10 @@ public static partial class DrawingEngine {
  }
  static void Arrange(Dictionary<string,object> p){
   if(!p.ContainsKey("auto_arrange")||!Convert.ToBoolean(p["auto_arrange"]))return;
-  drawing.ClearSelection2(true);int selected=0;
-  foreach(var v in views.Values)foreach(var item in A(v.GetAnnotations())){var a=(IAnnotation)item;if(a.GetSpecificAnnotation() is IDisplayDimension){Require(a.Select3(true,null),"Arrange selection");selected++;}}
-  if(selected>0)Require(drawing.Extension.AlignDimensions(0,.008),"Native auto-arrange failed");drawing.ClearSelection2(true);
+  foreach(var v in views.Values){drawing.ClearSelection2(true);int selected=0;Require(dr.ActivateView(v.Name),"Activate local dimension arrangement view failed");
+   foreach(var item in A(v.GetAnnotations())){var a=(IAnnotation)item;if(a.GetSpecificAnnotation() is IDisplayDimension){Require(a.Select3(true,null),"Arrange selection");selected++;}}
+   if(selected>0)Require(drawing.Extension.AlignDimensions(0,.008),"Native local auto-arrange failed: "+v.Name);
+  }drawing.ClearSelection2(true);dr.ActivateView("");
  }
  public static Dictionary<string,object> ExportDwg(string planPath){
   var p=Read(planPath);var report=D("status","FAILED","method","DWG_INDEPENDENT_READBACK","settings_restored",false);bool ownsNative=false;var originalSettings=new Dictionary<int,int>();var toggles=new Dictionary<int,bool>();double? originalScaleFactor=null;
