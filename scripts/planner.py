@@ -50,6 +50,14 @@ def pack_envelopes(blocks, first_angle, usable_bounds_mm, table_sizes_mm=None,
     def translated(key,p):
         b=local[key];return [b[0]+p[0],b[1]+p[1],b[2]+p[0],b[3]+p[1]]
     group={k:translated(k,p) for k,p in centres.items()}
+    # Side/top blocks also need the full gap near the orthographic group's corner.
+    if 'top' in roles and 'right' in roles:
+        key=roles['top'];top=group[key];side=group[roles['right']]
+        clearance=max(top[0]-side[2],side[0]-top[2],top[1]-side[3],side[1]-top[3])
+        if clearance<gap_mm:
+            vertical=side[1]-top[3] if first_angle else top[1]-side[3]
+            centres[key][1]+=(gap_mm-vertical)*(-1 if first_angle else 1)
+            group[key]=translated(key,centres[key])
     # Nonadjacent top/side blocks may have asymmetric annotations that collide.
     if any(overlaps(a,b) for a,b in itertools.combinations(group.values(),2)):
         raise ValueError('Orthographic annotation envelopes do not fit aligned group')

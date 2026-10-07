@@ -96,7 +96,7 @@ public static partial class DrawingEngine {
   if(p.ContainsKey("model_dimensions")){
    var options=Map(p["model_dimensions"]);var keep=new HashSet<string>(OptionalRows(options,"keep").Select(Convert.ToString));
    var original=new HashSet<string>();foreach(var v in views.Values)for(var dd=(IDisplayDimension)v.GetFirstDisplayDimension5();dd!=null;dd=(IDisplayDimension)dd.GetNext5())original.Add(((IDimension)dd.GetDimension2(0)).FullName);
-   var inventory=ModelDimensionInventory(p,original);report["model_dimension_import"]=inventory;
+   LayoutProgress(report,"model_import_start");var inventory=ModelDimensionInventory(p,original);report["model_dimension_import"]=inventory;LayoutProgress(report,"model_import_measured");
    inventory["status"]=Rows(inventory["missing"]).Length==0?"PASS":"MISSING_REQUIRED";
    Require(Rows(inventory["missing"]).Length==0,"Requested model dimensions were not imported: "+String.Join(",",Rows(inventory["missing"]).Select(Convert.ToString))+"; inspect Visibility.model_dimension_inventory before selecting keep");
    var found=new HashSet<string>();var remove=new List<IAnnotation>();
@@ -110,7 +110,10 @@ public static partial class DrawingEngine {
    }
    }
    Require(found.SetEquals(keep),"Requested model dimensions were not imported: "+String.Join(",",keep.Except(found)));
-   drawing.ClearSelection2(true);foreach(var a in remove)Require(a.Select3(true,null),"Redundant dimension selection failed");if(remove.Count>0)Require(drawing.Extension.DeleteSelection2(0),"Dimension deduplication failed");drawing.ClearSelection2(true);
+   drawing.ClearSelection2(true);LayoutProgress(report,"model_import_prune:"+remove.Count);
+   int selected=0;foreach(var a in remove){Require(a.Select3(true,null),"Redundant dimension selection failed");selected++;if(selected%20==0)LayoutProgress(report,"model_import_prune_selected:"+selected);}
+   if(remove.Count>0)Require(drawing.Extension.DeleteSelection2(0),"Dimension deduplication failed");
+   drawing.ClearSelection2(true);LayoutProgress(report,"model_import_pruned");
   }
   if(p.ContainsKey("import_pmi")&&Convert.ToBoolean(p["import_pmi"]))foreach(var v in views.Values)v.ImportAnnotations(false,true,true,false,true);
  }

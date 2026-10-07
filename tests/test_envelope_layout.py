@@ -38,6 +38,17 @@ class EnvelopeLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'fit'):
             planner.pack_envelopes({'front':{'position_mm':[0,0],'bounds_mm':[-400,-20,400,20]}},True,[25,65,415,292])
 
+    def test_nonadjacent_orthographic_blocks_require_full_clearance(self):
+        blocks=self.blocks()
+        blocks['top']['bounds_mm'][0]=90
+        blocks['right']['bounds_mm'][1]=89
+        for first_angle in (True,False):
+            result=planner.pack_envelopes(blocks,first_angle,[25,65,415,292],gap_mm=12)
+            boxes=list(result['bounds_mm'].values())
+            for i,a in enumerate(boxes):
+                for b in boxes[i+1:]:
+                    self.assertGreaterEqual(max(a[0]-b[2],b[0]-a[2],a[1]-b[3],b[1]-a[3]),12-1e-8)
+
     def test_reserved_stamp_and_table_stack_are_obstacles(self):
         result=planner.pack_envelopes(self.blocks(),True,[25,65,415,292],
                                      table_sizes_mm=[[80,30],[60,20]], reserved_boxes_mm=[[25,65,65,100]])
