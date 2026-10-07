@@ -8,8 +8,17 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import validate_plan
 import verify_outputs
+import validate_native
 
 class GeometryAuditTests(unittest.TestCase):
+    def test_native_plan_validator_accepts_geometry_audit_metadata(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);facts=root/'facts.json';template=root/'approved.drwdot';template.write_bytes(b'template')
+            facts.write_text(json.dumps({'schema_version':2,'document_type':'part','sha256':'0'*64,'model_views':['*Front'],'edges':[]}),encoding='utf-8')
+            p={'version':2,'facts':str(facts),'template':str(template),'output_drawing':str(root/'internal/part.SLDDRW'),'output_pdf':str(root/'deliverables/part.pdf'),'sheet':{'width_mm':420,'height_mm':297,'first_angle':True},'views':[{'id':'front','model_view':'*Front','position_mm':[100,100],'scale':1,'reason':'Nominal profile'}], 'dimensions':[],'sections':[],'labels':[],'tables':[],'notes':[],'unresolved':[],'geometry_audit':{'scope':'nominal_geometry'}}
+            try:validate_native.validate(p)
+            except ValueError as exc:self.fail('Native validator rejected geometry audit metadata: '+str(exc))
+
     def fixture(self):
         defs=[{'id':n,'entity':'block','property':n,'frame':'part','annotation':n,'evidence':'faces:'+n} for n in ('length','width','height')]
         checks={k:{'passed':True,'evidence':'Explicit feature reconstruction reviewed'} for k in ('feature_inventory','sizes','locations','orientations','depths_and_sections','patterns_and_relations','dimension_chains','nonredundancy','reconstruction')}

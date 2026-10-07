@@ -15,7 +15,7 @@
     "references/geometric-definition.md": "60278f01bbc7b6760bbd0021bf3220158625a70ca14b8380c00ee5745a03c57c",
     "references/layout-reference.md": "07dba402ff3e6af6bcb58eeaa3a77b50212a490e23c5f50e9379c1f26dfb6e38",
     "references/plan-contract.md": "81abafc600e191df5f93435a7e30a8a05bd90640e697e729cf0b2975a107afed",
-    "references/verification.md": "7a0897ddf5ca6ec2b2747212ebc2cf8aeb6228d2029b6fb61563ccbe3491b354",
+    "references/verification.md": "866fceaf2b0de331ac2c2efbfeb45b8c3e1d2feaea288ea259b2f86d73f6ac9b",
     "requirements.txt": "e2f88597e1588c105147a5cacb9c285a0d114877ac8b7b1031a07936e2612113",
     "scripts/dwg_pdf.ps1": "46f814621664a689bab533c0d54784ec1f3a7ae721d4b49268dca41de4c23262",
     "scripts/planner.py": "90e2eaa9670aee933aaf803d44bdb32ade0b496c389c34247dd57ce0895f5f09",
@@ -23,7 +23,7 @@
     "scripts/src/DrawingEngine.cs": "9dd6c264a6fc1de9870265948fe7c6860ef039718cc00ef99a871edbdab1cd7e",
     "scripts/src/DrawingPipeline.cs": "902b7244976a9dc81b7d46439186014d69c895c960409bd9cf5fdd0c56821df7",
     "scripts/src/InspectGeometry.cs": "4dd15af12c2cd8e12573170cd30538bc29c665a1ddf50882d8b35c36a615cc1f",
-    "scripts/validate_native.py": "2e27e22b21929b183520c2cce43c6c4aa9dc66ac5998a56e1357a1307a10fe9c",
+    "scripts/validate_native.py": "72f17997e19ec770bcb71abdc29511f90529bc70adc3c299f0c15d40c148ab65",
     "scripts/validate_plan.py": "4a52bf3a8c436686f5ef31272f40345c4532aa1810435ebbc14a7033f79ff588",
     "scripts/verify_outputs.py": "aad8c026f05abd0cd349d43e07793eefcdc9ec59d0dbdc2ccb8463415a60b19a",
     "scripts/worker.ps1": "f34d74bcc2f6eb5613dd0a835a14994331af2769787cb0953d451f6452df8eb2",
@@ -32,7 +32,7 @@
     "tests/native-dimension-inventory.ps1": "d39be59d64848233d239ac58822dd4c10b4765a92ea966a71673828b031f316a",
     "tests/native-model-dimensions.ps1": "a6fa12308f7cc3f6f64f7459ae9b5491e3422201e3a153a2c9e0b679da890706",
     "tests/test_drafting.py": "d408eb4ac3fa614865a61e99ce624f6c68b2e176b208eff72de38e6739fc5b0b",
-    "tests/test_geometry_audit.py": "123b9370d9a148dab03f4c621f867166f0ecd2c0e2d784a79e39dd41216417c2",
+    "tests/test_geometry_audit.py": "fb3ad9ea37bb156cdb2e9ad3baeb2914e68c3d8546ae2126234aa92d2b9b2c4a",
     "tests/test_model_dimensions.py": "50848f670a078e4379554408e26bf909e51f04093416ff1d3f3bf48f6a239812"
   }
 }
