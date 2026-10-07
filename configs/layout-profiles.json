@@ -1,17 +1,42 @@
 {
   "reference": "https://www.innerscene.com/tools/library/drawings/hub-flange-drawing-dimensioned-52ff43f4",
-  "papers": ["A4", "A3", "A2"],
+  "papers": [
+    "A4",
+    "A3",
+    "A2"
+  ],
   "template_policy": "Preserve the selected original drwdot frame, zones, title block, fonts, arrows and projection. Read its actual usable bounds and reserved boxes; a reference drawing is composition evidence, not a replacement template.",
   "annotation_margin_mm": 8,
   "view_gap_mm": 12,
   "dimension_font_mm": 3.5,
   "table_font_mm": 3,
-  "scale_policy": "largest fitting uniform orthographic scale within the selected original template; change paper only when a matching approved template is available",
-  "table_placements": ["side", "bottom"],
+  "scale_policy": "Choose common scale by measured annotated-block occupation and balance, retain fixed font/arrow sizes, prefer 45%-65% filled usable area with 55% target; preserve approved frame.",
+  "table_placements": [
+    "upper_right"
+  ],
   "profiles": {
-    "plate": {"primary": "broad face", "support": "thickness view", "dense_features": "combined callout or coordinate schedule"},
-    "shaft": {"primary": "axis-horizontal view", "support": "end view or axial section"},
-    "bracket": {"primary": "mounting-feature face", "support": "side view or section through hidden geometry"}
+    "plate": {
+      "primary": "broad face",
+      "support": "thickness view",
+      "dense_features": "combined callout or coordinate schedule"
+    },
+    "shaft": {
+      "primary": "axis-horizontal view",
+      "support": "end view or axial section"
+    },
+    "bracket": {
+      "primary": "mounting-feature face",
+      "support": "side view or section through hidden geometry"
+    }
   },
-  "provenance": "Frame and visual hierarchy observed in the flange reference; plate/shaft/bracket routing is engineering inference and requires geometry-specific review."
+  "provenance": "Frame and visual hierarchy observed in the flange reference; plate/shaft/bracket routing is engineering inference and requires geometry-specific review.",
+  "final_layout_policy": "Measure each fully dimensioned view envelope; translate aligned orthographic blocks together, reserve template regions, and stack measured tables at upper right.",
+  "envelope_padding_mm": 3,
+  "frame_clearance_mm": 10,
+  "local_dimension_spacing_mm": 8,
+  "occupied_fraction_target": 0.55,
+  "occupied_fraction_range": [
+    0.45,
+    0.65
+  ]
 }

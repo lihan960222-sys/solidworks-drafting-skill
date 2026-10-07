@@ -3,7 +3,7 @@ param(
  [string]$Source='', [string]$Configuration='', [string]$Plan='',
  [Parameter(Mandatory=$true)][string]$Output,
  [string]$InteropPath='', [string]$Python='python',
- [ValidateRange(1,3600)][int]$TimeoutSeconds=180
+ [ValidateRange(1,3600)][int]$TimeoutSeconds=600
 )
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
@@ -34,7 +34,7 @@ try {
  $parent=Split-Path -Parent $Output;[IO.Directory]::CreateDirectory($parent)|Out-Null
  $requestId=[guid]::NewGuid().ToString('N');$request=Join-Path $parent ('request-'+$requestId+'.json')
  $workerOutput=$Output+'.'+$requestId+'.worker.json';$log=$Output+'.'+$requestId+'.worker.log'
- @{mode=$Mode;source=$Source;configuration=$Configuration;plan=$Plan;request_id=$requestId} | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding UTF8
+ @{mode=$Mode;source=$Source;configuration=$Configuration;plan=$Plan;request_id=$requestId;python=$Python} | ConvertTo-Json | Set-Content -LiteralPath $request -Encoding UTF8
  $args=@('-NoProfile','-ExecutionPolicy','Bypass','-Sta','-File',('"'+(Join-Path $PSScriptRoot 'worker.ps1')+'"'),'-Request',('"'+$request+'"'),'-Response',('"'+$workerOutput+'"'),'-InteropPath',('"'+$InteropPath+'"'))
  $worker=Start-Process -FilePath (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $args -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError ($log+'.err')
  $workerHandle=$worker.Handle

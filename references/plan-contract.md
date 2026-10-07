@@ -20,6 +20,8 @@ Required roots: `version: 2`, `facts`, `template`, `output_drawing`, `output_dwg
 | `import_pmi` | Boolean. Imports existing DimXpert-related annotations through `IView.ImportAnnotations`; no tolerance generation |
 | `auto_arrange` | Boolean. Aligns selected dimensions locally with native `AlignDimensions`; does not prove global collision freedom |
 
+New plans include `layout` and `line_hierarchy` as described in [envelope-layout.md](envelope-layout.md). View/annotation positions are initial authoring positions; the saved measured layout records final translated positions and is bound to the plan hash. Legacy plans without `layout` retain fixed positions. `line_hierarchy` is boolean; it defaults to true in native creation. Explicit true enables reopened style acceptance. Arbitrary `style` overrides remain unsupported.
+
 Related orthographic views share a scale; an isometric can use another scale with a visible scale note. Do not use the scale to change nominal sizes. Existing model dimensions are selectively retained by identity, not by number alone.
 
 Before freezing `keep`, run `Visibility` on the tentative view plan with the intended import flags. Its `model_dimension_inventory` reports actual `dimensions` (`name`, full `source_name`, view, SI value, display type, position and dangling state), `returned_annotations`, and requested `matched`/`missing` names. It creates and closes an unsaved temporary drawing; it does not save deliverables. With no `model_dimensions` object, this diagnostic includes unmarked dimensions and excludes hidden features. An explicit object uses the flags above. Rerun this measurement if views, configuration or import flags change.

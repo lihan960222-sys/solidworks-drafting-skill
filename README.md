@@ -10,6 +10,8 @@
 
 离线检查：`python -m unittest discover -s tests -v`。原生编译/验收入口：`tests/native-acceptance.ps1`。开发样件由 `tests/SampleParts.cs` 创建，用户图纸与参考 DWG 不随技能发布。
 
-发布快照：**2026.10.07-rc2**。独立项目：[solidworks-drafting-skill](https://github.com/lihan960222-sys/solidworks-drafting-skill)。本次修复增加实际尺寸导入预检、按特征区分同名标注、隐藏特征选项及名义几何完整性/去重审核。实际回归证据和边界见 [verification.md](references/verification.md)；模块测试不替代完整图纸验收。
+发布快照：**2026.10.07-rc3**。独立项目：[solidworks-drafting-skill](https://github.com/lihan960222-sys/solidworks-drafting-skill)。本次修复增加实际尺寸导入预检、按特征区分同名标注、隐藏特征选项及名义几何完整性/去重审核。实际回归证据和边界见 [verification.md](references/verification.md)；模块测试不替代完整图纸验收。
 
 同系列独立项目：旧原生工程图 [solidworks-drawing-skill](https://github.com/lihan960222-sys/solidworks-drawing-skill)，通用自动化迁移 [solidworks-automation-port-skill](https://github.com/lihan960222-sys/solidworks-automation-port-skill)。
+
+排版改进：将视图与文字、尺寸线、引线、箭头一起测量为包络矩形，保持三视图投影中心对齐，表格固定在可用区域右上。按共同缩放比例试排，字号、箭头和名义尺寸保持；优选 45%-65% 包络面积占用率，目标 55%，默认安全边距 3 mm、块/表格间距 12 mm、图框内边距至少 10 mm。采用粗模型轮廓、细尺寸线，黑白打印仍可区分。实际包络和样式在保存重开时复核，细则见 [envelope-layout.md](references/envelope-layout.md)。局部标注重叠与几何完整性仍须单独验收。

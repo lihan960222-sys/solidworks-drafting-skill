@@ -6,6 +6,9 @@ try {
  $interop=Join-Path $InteropPath 'SolidWorks.Interop.sldworks.dll';$constants=Join-Path $InteropPath 'SolidWorks.Interop.swconst.dll'
  Add-Type -Path $interop;Add-Type -Path $constants
  Add-Type -ReferencedAssemblies @($interop,$constants,'System.Web.Extensions.dll','System.Drawing.dll','System.Core.dll') -Path @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object {$_.FullName})
+ [DrawingEngine]::LayoutPython=$requestData.python
+ [DrawingEngine]::LayoutPlanner=Join-Path $PSScriptRoot 'planner.py'
+ [DrawingEngine]::LayoutProgressPath=$Response.Replace('.worker.json','.progress.json')
  switch($requestData.mode){
   'Inspect' {$result=[DrawingEngine]::Inspect($requestData.source,$requestData.configuration)}
   'Visibility' {$result=[DrawingEngine]::Visibility($requestData.plan)}

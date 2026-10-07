@@ -25,7 +25,7 @@ def validate(plan, allow_existing=False):
         require(isinstance(v, list) and len(v) == size and all(num(x) for x in v), name + " invalid")
 
     require(plan.get("version") == 2, "Unsupported plan version")
-    allowed = {"version", "facts", "output_drawing", "output_pdf", "template", "sheet", "views", "dimensions", "diameters", "sections", "labels", "tables", "notes", "unresolved", "output_dwg", "coverage", "dimension_ids", "model_dimensions", "import_pmi", "auto_arrange", "linear", "radial", "details", "export", "style", "dimension_scheme", "geometry_audit"}
+    allowed = {"version", "facts", "output_drawing", "output_pdf", "template", "sheet", "views", "dimensions", "diameters", "sections", "labels", "tables", "notes", "unresolved", "output_dwg", "coverage", "dimension_ids", "model_dimensions", "import_pmi", "auto_arrange", "linear", "radial", "details", "export", "style", "dimension_scheme", "geometry_audit", "layout", "line_hierarchy"}
     require(not set(plan) - allowed, "Unknown root fields: " + str(set(plan) - allowed))
     for key in ("facts", "output_drawing", "template"):
         require(isinstance(plan.get(key), str) and os.path.isabs(plan[key]), key + " must be absolute")

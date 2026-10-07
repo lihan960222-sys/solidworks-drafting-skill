@@ -18,6 +18,12 @@ class GeometryAuditTests(unittest.TestCase):
             p={'version':2,'facts':str(facts),'template':str(template),'output_drawing':str(root/'internal/part.SLDDRW'),'output_pdf':str(root/'deliverables/part.pdf'),'sheet':{'width_mm':420,'height_mm':297,'first_angle':True},'views':[{'id':'front','model_view':'*Front','position_mm':[100,100],'scale':1,'reason':'Nominal profile'}], 'dimensions':[],'sections':[],'labels':[],'tables':[],'notes':[],'unresolved':[],'geometry_audit':{'scope':'nominal_geometry'}}
             try:validate_native.validate(p)
             except ValueError as exc:self.fail('Native validator rejected geometry audit metadata: '+str(exc))
+            p.update(layout={'usable_bounds_mm':[25,65,415,292],'reserved_boxes_mm':[],
+                             'orthographic_views':{'front':'front'},'gap_mm':12,'padding_mm':2},line_hierarchy=True,
+                     output_dwg=str(root/'deliverables/part.dwg'),coverage=[],dimension_ids=[])
+            validate_native.validate(p)
+            with patch.object(validate_plan,'check_coverage',return_value={'complete':False}),patch.object(validate_plan,'check_model_dimensions'):
+                validate_plan.validate(p)
 
     def fixture(self):
         defs=[{'id':n,'entity':'block','property':n,'frame':'part','annotation':n,'evidence':'faces:'+n} for n in ('length','width','height')]

@@ -25,10 +25,13 @@ public static partial class DrawingEngine {
  static object NativeInventory(IModelDoc2 doc) {
   var rows=new List<object>();
   for(var v=(IView)((IDrawingDoc)doc).GetFirstView();v!=null;v=(IView)v.GetNextView()) {
+   bool modelView=!String.IsNullOrEmpty(v.GetReferencedModelName());var envelope=modelView&&measureEnvelopes?Vec(v.GetOutline()).Select(x=>x*1000).ToArray():null;
    var items=new List<object>();
    foreach(var ao in A(v.GetAnnotations())) {
     var a=(IAnnotation)ao;var specific=a.GetSpecificAnnotation();
     var item=D("annotation_name",a.GetName(),"type",a.GetType(),"dangling",a.IsDangling(),"position",a.GetPosition());
+    item["line_width"]=a.Width;item["color"]=a.Color;
+    if(measureEnvelopes){var b=AnnotationEnvelope(a);item["bounds_mm"]=b;if(modelView&&b!=null){envelope[0]=Math.Min(envelope[0],b[0]);envelope[1]=Math.Min(envelope[1],b[1]);envelope[2]=Math.Max(envelope[2],b[2]);envelope[3]=Math.Max(envelope[3],b[3]);}}
     var dd=specific as IDisplayDimension;var note=specific as INote;var table=specific as ITableAnnotation;
     if(dd!=null){var dim=(IDimension)dd.GetDimension2(0);string name=dim.FullName;if(name.Count(c=>c=='@')>=2)name=name.Substring(0,name.LastIndexOf('@'));item["name"]=name;item["value_si"]=dim.SystemValue;item["prefix"]=dd.GetText(1);item["suffix"]=dd.GetText(2);}
     else if(note!=null)item["text"]=note.GetText();
@@ -36,7 +39,9 @@ public static partial class DrawingEngine {
     else item["name"]=a.GetName();
     items.Add(item);
    }
-   rows.Add(D("view",v.Name,"source",v.GetReferencedModelName(),"configuration",v.ReferencedConfiguration,"scale",v.ScaleDecimal,"orientation",v.GetOrientationName(),"position",v.Position,"outline",v.GetOutline(),"annotations",items));
+   var viewRow=D("view",v.Name,"source",v.GetReferencedModelName(),"configuration",v.ReferencedConfiguration,"scale",v.ScaleDecimal,"orientation",v.GetOrientationName(),"position",v.Position,"outline",v.GetOutline(),"annotations",items,"line_hierarchy",LineHierarchySnapshot(doc));
+   if(measureEnvelopes&&modelView)viewRow["envelope_mm"]=envelope;
+   rows.Add(viewRow);
   }
   return rows;
  }
@@ -138,9 +143,10 @@ public static partial class DrawingEngine {
  }
  static void Arrange(Dictionary<string,object> p){
   if(!p.ContainsKey("auto_arrange")||!Convert.ToBoolean(p["auto_arrange"]))return;
-  drawing.ClearSelection2(true);int selected=0;
-  foreach(var v in views.Values)foreach(var item in A(v.GetAnnotations())){var a=(IAnnotation)item;if(a.GetSpecificAnnotation() is IDisplayDimension){Require(a.Select3(true,null),"Arrange selection");selected++;}}
-  if(selected>0)Require(drawing.Extension.AlignDimensions(0,.008),"Native auto-arrange failed");drawing.ClearSelection2(true);
+  foreach(var v in views.Values){drawing.ClearSelection2(true);int selected=0;Require(dr.ActivateView(v.Name),"Activate local dimension arrangement view failed");
+   foreach(var item in A(v.GetAnnotations())){var a=(IAnnotation)item;if(a.GetSpecificAnnotation() is IDisplayDimension){Require(a.Select3(true,null),"Arrange selection");selected++;}}
+   if(selected>0)Require(drawing.Extension.AlignDimensions(0,.008),"Native local auto-arrange failed: "+v.Name);
+  }drawing.ClearSelection2(true);dr.ActivateView("");
  }
  public static Dictionary<string,object> ExportDwg(string planPath){
   var p=Read(planPath);var report=D("status","FAILED","method","DWG_INDEPENDENT_READBACK","settings_restored",false);bool ownsNative=false;var originalSettings=new Dictionary<int,int>();var toggles=new Dictionary<int,bool>();double? originalScaleFactor=null;
